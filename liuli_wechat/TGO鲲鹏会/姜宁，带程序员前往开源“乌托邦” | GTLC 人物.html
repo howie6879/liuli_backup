@@ -1,0 +1,2125 @@
+<!DOCTYPE html>
+<html class="
+">
+  <head>
+            <meta name="wechat-enable-text-zoom-em" content="true">
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="color-scheme" content="light dark">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=0,viewport-fit=cover">
+<link rel="shortcut icon" type="image/x-icon" href="//res.wx.qq.com/a/wx_fed/assets/res/NTI4MWU5.ico" reportloaderror>
+<link rel="mask-icon" href="//res.wx.qq.com/a/wx_fed/assets/res/MjliNWVm.svg" color="#4C4C4C" reportloaderror>
+<link rel="apple-touch-icon-precomposed" href="//res.wx.qq.com/a/wx_fed/assets/res/OTE0YTAw.png" reportloaderror>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="format-detection" content="telephone=no">
+<script  nonce="1412121176" reportloaderror>try{document.getElementsByTagName('html').item(0).style.webkitTextSizeAdjust=JSON.parse(window.__wxWebEnv.getEnv()).fontScale+'%'}catch(e){}</script>
+<script type="text/javascript" nonce="1412121176" reportloaderror>
+  window.logs = { pagetime: {} };
+  window.logs.pagetime['html_begin'] = (+new Date());
+  window.LANG = "zh_CN"; // 页面语言 zh_CN en_US
+</script>
+
+    <script type="text/javascript" nonce="1412121176" reportloaderror>
+/**
+ * 于2022-02-21重构vite
+ * 仅保留原有moon.js中上报相关的部分
+ * @author baakqiu
+ * @date 2022-02-21
+ */
+
+var WX_BJ_REPORT = window.WX_BJ_REPORT || {};
+(function(_) {
+  if (_.BadJs) {
+    return;
+  }
+  //onerror上报名 
+  var BADJS_WIN_ERR = 'BadjsWindowError';
+  var extend = function(source, destination) {
+    for (var property in destination) {
+      source[property] = destination[property]
+    }
+    return source
+  }
+  /*
+    出错上报字段:mid name key  msg  stack file col line uin
+    mid 模块名
+    name 监控名
+    key 特征值
+    msg 额外信息
+  */
+  _.BadJs = {
+    uin: 0,
+    mid: "",
+    view: "wap",
+    _cache: {}, //上报_cache 同一mid name key 只会上报一次
+    _info: {}, // 打点记录 会写入msg帮助定位
+    _hookCallback: null,
+    ignorePath: true,
+    throw: function(e, extData) {
+      this.onError(e, extData);
+      throw e;
+    },
+    //接收异常并上报处理 如果有额外信息可以放在第二个参数_data中
+    // _data 只能覆盖上报协议的字段mid （name,key 不建议通过data覆盖） msg  stack file col line uin
+    onError: function(e, extData) {
+      try {
+        //标记已执行的throw
+        if (e.BADJS_EXCUTED == true) {
+          return;
+        }
+        e.BADJS_EXCUTED = true;
+        var data = errToData(e);
+        data.uin = this.uin;
+        data.mid = this.mid;
+        data.view = this.view;
+        data.cmdb_module = 'mmbizwap';
+        //data.msg = msg || data.msg;
+        if (!!extData) {
+          data = extend(data, extData);
+        }
+        //如果cid存在 将cid合并到key
+        if (data.cid) {
+          data.key = "[" + data.cid + "]:" + data.key;
+        }
+        
+        if (data._info) {
+          if (Object.prototype.toString.call(data._info) == "[object Object]") {
+            data.msg += " || info:" + JSON.stringify(data._info);
+          } else if (Object.prototype.toString.call(data._info) == "[object String]") {
+            data.msg += " || info:" + data._info;
+          } else {
+            data.msg += " || info:" + data._info;
+          }
+        }
+        if (typeof this._hookCallback == "function") {
+          if (this._hookCallback(data) === false) {
+            return
+          }
+        }
+        this._send(data);
+        return _.BadJs;
+      } catch (e) {
+        console.error(e);
+      }
+    },
+    winErr: function(event) {
+      if (event.error && event.error.BADJS_EXCUTED) {
+        return;
+      }
+      if (event.type === 'unhandledrejection') {
+        _.BadJs.onError(createError(event.type, event.reason, "", "", "", event.reason));
+      }else{
+        _.BadJs.onError(createError(BADJS_WIN_ERR, event.message, event.filename, event.lineno, event.colno, event.error));
+      }
+    },
+    init: function(uin, mid, view) {
+      this.uin = uin || this.uin;
+      this.mid = mid || this.mid;
+      this.view = view || this.view;
+      return _.BadJs;
+    },
+    //钩子函数
+    hook: function(fn) {
+      this._hookCallback = fn;
+      return _.BadJs;
+    },
+    _send: function(data) {
+      //hack uin mid
+      if (!data.mid) {
+        if (typeof window.PAGE_MID !== 'undefined' && window.PAGE_MID) {
+          data.mid = window.PAGE_MID;
+        } else {
+          return;
+        }
+      }
+      if (!data.uin) {
+        data.uin = window.user_uin || 0;
+      }
+      // 发送要去重 
+      var flag = [data.mid, data.name, data.key].join("|");
+      if (this._cache && this._cache[flag]) {
+        return
+      } else {
+        this._cache && (this._cache[flag] = true);
+        this._xhr(data);
+      }
+      return _.BadJs;
+    },
+    _xhr: function(data) {
+      //console.log(data);
+      var xmlobj;
+      if (window.ActiveXObject) {
+        try {
+          xmlobj = new ActiveXObject("Msxml2.XMLHTTP");
+        } catch (e) {
+          try {
+            xmlobj = new ActiveXObject("Microsoft.XMLHTTP");
+          } catch (E) {
+            xmlobj = false;
+          }
+        }
+      } else if (window.XMLHttpRequest) {
+        xmlobj = new XMLHttpRequest();
+      }
+      var param = "";
+      for (var key in data) {
+        if (key && data[key]) {
+          param += [key, "=", encodeURIComponent(data[key]), "&"].join("");
+        }
+      }
+      if (xmlobj && typeof xmlobj.open == "function") {
+        xmlobj.open("POST", "https://badjs.weixinbridge.com/report", true);
+        xmlobj.setRequestHeader("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8");
+        xmlobj.onreadystatechange = function(status) {};
+        xmlobj.send(param.slice(0, -1));
+      } else {
+        var img = new Image();
+        img.src = "https://badjs.weixinbridge.com/report?" + param;
+      }
+    },
+    // key是特征值 默认上报msg就是key，也可以主动传msg包含更多上报信息 
+    report: function(name, key, data) {
+      this.onError(createError(name, key), data);
+      return this;
+    },
+    // 打点标记
+    mark: function(info) {
+      this._info = extend(this._info, info);
+    },
+    nocache: function() {
+      this._cache = false;
+      return _.BadJs;
+    }
+  }
+  function createError(name, msg, url, line, col, error) {
+    return {
+      name: name || "",
+      message: msg || "",
+      file: url || "",
+      line: line || "",
+      col: col || "",
+      stack: (error && error.stack) || "",
+    }
+  }
+  //将异常错误转换成上报协议支持的字段
+  /*
+  * 先取e对象上的file line col等字段
+  * 再解析e.statck
+  * name 错误大类 默认取badjs_try_err|badjs_win_err
+  * key  错误标识 e.message
+  * msg  错误信息 e.message
+  * stack 错误堆栈 e.stack
+  * file 错误发生的文件
+  * line 行
+  * col 列
+  * client_version
+  */
+  function errToData(e) {
+    var _stack = parseStack(e);
+    return {
+      name: e.name,
+      key: e.message,
+      msg: e.message,
+      stack: _stack.info,
+      file: _stack.file,
+      line: _stack.line,
+      col: _stack.col,
+      client_version: "",
+      _info: e._info
+    }
+  }
+  function parseStack(e) {
+    e._info = e._info || ""; // 当前错误的额外信息 最终上报到info
+    var stack = e.stack || "";
+    var _stack = {
+      info: stack,
+      file: e.file || "",
+      line: e.line || "",
+      col: e.col || "",
+    };
+    if (_stack.file == "") {
+      // 提取file line col
+      var stackArr = stack.split(/\bat\b/);
+      if (stackArr && stackArr[1]) {
+        var match = /(https?:\/\/[^\n]+)\:(\d+)\:(\d+)/.exec(stackArr[1]);
+        if (match) {
+          //若stack提取的file line col跟e中的属性不一致，以stack为准 但在e._info中记录原始数据
+          if (match[1] && match[1] != _stack.file) {
+            _stack.file && (e._info += " [file: " + _stack.file + " ]");
+            _stack.file = match[1];
+          }
+          if (match[2] && match[2] != _stack.line) {
+            _stack.line && (e._info += " [line: " + _stack.line + " ]");
+            _stack.line = match[2];
+          }
+          if (match[3] && match[3] != _stack.col) {
+            _stack.col && (e._info += " [col: " + _stack.col + " ]");
+            _stack.col = match[3];
+          }
+        }
+      }
+    }
+    //替换堆栈中的文件路径 combojs太长
+    if (_stack && _stack.file && _stack.file.length > 0) {
+      _stack.info = _stack.info.replace(new RegExp(_stack.file.split("?")[0], "gi"), "__FILE__")
+    }
+    //堆栈路径只保存文件名
+    if (_.BadJs.ignorePath) {
+      _stack.info = _stack.info.replace(/http(s)?\:[^:\n]*\//ig, "").replace(/\n/gi, "");
+    }
+    return _stack;
+  }
+  //兜底方法
+  window.addEventListener && window.addEventListener('error', _.BadJs.winErr);
+  window.addEventListener && window.addEventListener('unhandledrejection', _.BadJs.winErr);
+  return _.BadJs;
+})(WX_BJ_REPORT);
+window.WX_BJ_REPORT = WX_BJ_REPORT;
+/**
+ * 兼容wap项目的简单CMD管理
+ * 所有wap项目必须包含此文件才可以执行成功
+ * 暴露在全局的变量仍然以seajs为命名空间，跟web项目保持一致
+ * 支持的API是seajs.use，以及require define
+ * @author raphealguo
+ * @date 20140326
+ */
+function __moonf__() {
+  if (window.__moonhasinit) return;
+  window.__moonhasinit = true;
+  window.__moonclientlog = []; // moon中存到客户端日志里面的内容，最终写入到客户端的地点在fereport.js
+  if (typeof JSON != "object") { //针对IE7的hack
+    window.JSON = {
+      stringify: function() { return ""; },
+      parse: function() { return {}; }
+    };
+  }
+  var moon_init = function() {
+    // 前端的@cunjinli
+    (function() {
+      // @cunjinli 重写alert函数, moonsafe监控
+      var _alert = window.alert;
+      window.__alertList = [];
+      window.alert = function(msg) {
+        _alert(msg);
+        window.__alertList.push(msg);
+      };
+    })();
+    /**
+     * moonsafe @cunjinli 加在这里
+     */
+    (function() {
+      // if (window.__nonce_str) {
+      //   var __old_createElement = document.createElement;
+      //   document.createElement = function(tagName) {
+      //     var node = __old_createElement.apply(this, arguments);
+      //     if (typeof tagName == 'object') {
+      //       tagName = tagName.toString();
+      //     }
+      //     if (typeof tagName == 'string' && tagName.toLowerCase() == 'script') {
+      //       node.setAttribute("nonce", window.__nonce_str);
+      //     }
+      //     return node;
+      //   }
+      // }
+      if (window.addEventListener && window.__DEBUGINFO && Math.random() < 0.01) {
+        window.addEventListener("load", function() {
+          var node = document.createElement('script');
+          node.src = __DEBUGINFO.safe_js;
+          node.type = 'text/javascript';
+          node.async = true;
+          var head = document.head || (document.getElementsByTagName("head")[0]);
+          head.appendChild(node);
+        });
+      }
+    })();
+    /**
+     * mooncatch
+     * 对各种异步回调都使用try catch错误上报
+     * @radeonwu raphealguo
+     */
+    (function() {
+      var inWx = (/MicroMessenger/i).test(navigator.userAgent);
+      var inMp = (/MPAPP/i).test(navigator.userAgent);
+      var _idkey = 121261; //上报的idkey 添加默认上报值
+      var _startKey; //开始的key
+      var _limit; //上报的key的长度
+      var _badjsId;
+      var _reportOpt; //上报的额外信息
+      var _extInfo; //附加的预留字段，如网络采样率采样率network_rate， 总体上报率rate
+      var MOON_LISTENER_ERROR_KEY_OFFSET = 2; //addEventListener上报时的偏移量为2
+      var MOON_AJAX_NETWORK_OFFSET = 4; //network错误时的上报偏移量为4，这里在ajax.js中上报，这里需要加入采样率
+      var MOON_ASYNC_ERROR_KEY_OFFSET = 9; //setTimeout和setInterval上报时的偏移量为9
+      var MOON_LOCALSTORAGE_ERROR_KEY_OFFSET = 10; //localstorage.setItem失败时的偏移量为10
+      window.__initCatch = function(opt) {
+        _idkey = opt.idkey;
+        _startKey = opt.startKey || 0;
+        _limit = opt.limit;
+        _badjsId = opt.badjsId;
+        _reportOpt = opt.reportOpt || "";
+        _extInfo = opt.extInfo || {};
+        _extInfo.rate = _extInfo.rate || 0.5;
+      }
+      //暴露的上报函数，供core.js和ajax.js上报错误使用，array = [{offset:MOON_JSAPI_KEY_OFFSET, log:"ready", e:e}]
+      window.__moon_report = function(array, rate_opt) {
+        var isAcrossOrigin = false;
+        var href = '';
+        try {
+          href = top.location.href;
+        } catch (e) {
+          isAcrossOrigin = true;
+        }
+        var rate = 0.5;
+        if (!!_extInfo && !!_extInfo.rate) {
+          rate = _extInfo.rate;
+        }
+        if (!!rate_opt && (typeof rate_opt == 'number')) {
+          rate = rate_opt;
+        }
+        if (
+          (!(/mp\.weixin\.qq\.com/).test(location.href) && !(/payapp\.weixin\.qq\.com/).test(location.href)) ||
+          Math.random() > rate ||
+          !(inWx || inMp) ||
+          (top != window && !isAcrossOrigin && !(/mp\.weixin\.qq\.com/).test(href))
+        ) {
+          //return ;
+        }
+        if (isObject(array))
+          array = [array];
+        if (!isArray(array) || _idkey == '')
+          return;
+        var data = "";
+        var log = []; //存放array中每个对象关联的log
+        var key = []; //存放array中每个上报的key
+        var val = []; //存放array中每个上报的value
+        var idkey = [];
+        //如果这里没有opt.limit，直接上报到startKey
+        if (typeof _limit != "number") {
+          _limit = Infinity;
+        }
+        for (var i = 0; i < array.length; i++) {
+          var item = array[i] || {};
+          if (item.offset > _limit) continue; //上报的偏移量超过limit
+          if (typeof item.offset != "number") continue;
+          if (item.offset == MOON_AJAX_NETWORK_OFFSET && !!_extInfo && !!_extInfo.network_rate && Math.random() >= _extInfo.network_rate) {
+            continue;
+          }
+          //log[i] = item.log || "";
+          var k = _limit == Infinity ? _startKey : (_startKey + item.offset);
+          log[i] = (("[moon]" + _idkey + "_" + k + ";") + item.log + ";" + getErrorMessage(item.e || {})) || "";
+          key[i] = k;
+          val[i] = 1;
+        }
+        for (var j = 0; j < key.length; j++) {
+          idkey[j] = _idkey + "_" + key[j] + "_" + val[j];
+          data = data + "&log" + j + "=" + log[j];
+        }
+        if (idkey.length > 0) {
+          // sendReport("idkey=" + idkey.join(";") + "&lc=" + log.length + data);
+          sendReport("POST", location.protocol + '//mp.weixin.qq.com/mp/jsmonitor?', "idkey=" + idkey.join(";") + "&r=" + Math.random() + "&lc=" + log.length + data);
+          // 把图文消息的错误上报一份到badjs，只支持get请求
+          // 这里由于量比较大，把badjs的内层怼爆了，这里加多一个采样，并且去掉用户的信息
+          var rate = 1;
+          if (_extInfo && _extInfo.badjs_rate) { // 初始化时的badjs采样率
+            rate = _extInfo.badjs_rate;
+          }
+          if (Math.random() < rate) {
+            data = data.replace(/uin\:(.)*\|biz\:(.)*\|mid\:(.)*\|idx\:(.)*\|sn\:(.)*\|/, '');
+            if(!!_badjsId){
+              var _img = new Image();
+              var _src = 'https://badjs.weixinbridge.com/badjs?id=' + _badjsId + '&level=4&from=' + encodeURIComponent(location.host) + '&msg=' + encodeURIComponent(data);
+              _img.src = _src.slice(0, 1024);
+            }
+            // badjs同时报一份到新监控 
+            if (typeof WX_BJ_REPORT != "undefined" && WX_BJ_REPORT.BadJs) {
+              for (var i = 0; i < array.length; i++) {
+                var item = array[i] || {};
+                if (item.e) {
+                  WX_BJ_REPORT.BadJs.onError(item.e,{_info:item.log});
+                } else {
+                  var name = /[^:;]*/.exec(item.log)[0];
+                  WX_BJ_REPORT.BadJs.report(name, item.log, { mid: "mmbizwap:Monitor" });
+                }
+              }
+            }
+          } else {
+            //虽然采样没有执行 但实际是有被BadJs.onError，置位一下
+            for (var i = 0; i < array.length; i++) {
+              var item = array[i] || {};
+              if (item.e) {
+                item.e.BADJS_EXCUTED = true;
+              }
+            }
+          }
+        }
+      }
+      function isArray(obj) { //判断输入是否为数组
+        return Object.prototype.toString.call(obj) === '[object Array]';
+      }
+      function isObject(obj) { //判断输入是否为对象
+        return Object.prototype.toString.call(obj) === '[object Object]';
+      }
+      function getErrorMessage(e) {
+        var stack = e.stack + ' ' + e.toString() || ""; //错误堆栈信息
+        try {
+          //先取出res域名
+          if (!window.testenv_reshost) {
+            stack = stack.replace(/http(s)?:\/\/res\.wx\.qq\.com/g, "");
+          } else {
+            var host = 'http(s)?://' + window.testenv_reshost;
+            var reg = new RegExp(host, 'g');
+            stack = stack.replace(reg, "");
+          }
+          //提取最后一个.js前边的
+          var reg = /\/([^.]+)\/js\/(\S+?)\.js(\,|:)?/g;
+          while (reg.test(stack)) {
+            // stack = stack.replace(reg, "3"); 解决$问题
+            stack = stack.replace(reg, function(a, b, c, d, e, f) {
+              return c + d
+            });
+          }
+        } catch (e) {
+          stack = e.stack ? e.stack : "" //错误堆栈信息
+        }
+        var ret = [];
+        for (o in _reportOpt) {
+          if (_reportOpt.hasOwnProperty(o)) {
+            ret.push(o + ":" + _reportOpt[o]);
+          }
+        }
+        ret.push("STK:" + stack.replace(/\n/g, ""));
+        return ret.join("|");
+      }
+      function sendReport(type, url, data) { //post方法用于提交数据
+        if (!/^mp\.weixin\.qq\.com$/.test(location.hostname)) { //非MP域名使用 img方式上报
+          var tmp = [];
+          data = data.replace(location.href, (location.origin || "") + (location.pathname || "")).replace("#wechat_redirect", "").replace("#rd", "").split("&");
+          for (var i = 0, il = data.length; i < il; i++) {
+            var a = data[i].split("=");
+            if (!!a[0] && !!a[1]) {
+              tmp.push(a[0] + "=" + encodeURIComponent(a[1]));
+            }
+          }
+          var _img = new window.Image();
+          _img.src = (url + tmp.join("&")).substr(0, 1024);
+          return;
+        }
+        var xmlobj; //定义XMLHttpRequest对象  
+        if (window.ActiveXObject) { //如果当前浏览器支持Active Xobject，则创建ActiveXObject对象    
+          try {
+            xmlobj = new ActiveXObject("Msxml2.XMLHTTP");
+          } catch (e) {
+            try {
+              xmlobj = new ActiveXObject("Microsoft.XMLHTTP");
+            } catch (E) {
+              xmlobj = false;
+            }
+          }
+        } else if (window.XMLHttpRequest) { //如果当前浏览器支持XMLHttpRequest，则创建XMLHttpRequest对象  
+          xmlobj = new XMLHttpRequest();
+        }
+        if (!xmlobj) return;
+        //xmlobj.open("POST", location.protocol + "//mp.weixin.qq.com/mp/jsmonitor?", true);         
+        xmlobj.open(type, url, true);
+        xmlobj.setRequestHeader("cache-control", "no-cache");
+        xmlobj.setRequestHeader("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8"); //设置请求头信息              
+        xmlobj.setRequestHeader("X-Requested-With", "XMLHttpRequest");
+        xmlobj.send(data); //发送数据  
+      }
+      function catTimeout(foo) {
+        return function(cb, timeout) {
+          if (typeof cb === 'string') {
+            try {
+              cb = new Function(cb);
+            } catch (err) {
+              throw err;
+            }
+          }
+          var args = [].slice.call(arguments, 2);
+          var _cb = cb;
+          cb = function() {
+            try {
+              return _cb.apply(this, (args.length && args) || arguments);
+            } catch (error) {
+              if (error.stack && console && console.error) { //chrome有bug，特定情况下看不到throw的error，这里console.error下，防止给调试留坑
+                console.error("[TryCatch]" + error.stack);
+              }
+              if (!!_idkey && !!window.__moon_report) { //没有初始化_key，直接throw error
+                //sendReport(error);
+                window.__moon_report([{ offset: MOON_ASYNC_ERROR_KEY_OFFSET, log: "timeout_error;host:" + location.host, e: error }]);
+                //breakOnError(timeoutkey);
+              }
+              throw error;
+            }
+          }
+          return foo(cb, timeout);
+        };
+      };
+      window.setTimeout = catTimeout(window.setTimeout);
+      window.setInterval = catTimeout(window.setInterval);
+      if (Math.random() < 0.01 && !!window.Document && !!window.HTMLElement) {
+        var cb_map = {};
+        var moon_lid = 0;
+        function catAddListener(foo) {
+          return function(type, cb, useCapture) {
+            if (typeof useCapture === "undefined") {
+              var useCapture = false;
+            }
+            var that = this;
+            var _cb = cb || function() {};
+            cb = function() {
+              try {
+                //arguments[0].currentTarget.setAttribute("data-moon_lid") = moon_lid;
+                //_cb.moon_lid = moon_lid;
+                return _cb.apply(that, arguments);
+              } catch (error) {
+                if (error.stack && console && console.error) { //chrome有bug，特定情况下看不到throw的error，这里console.error下，防止给调试留坑
+                  console.error("[TryCatch]" + error.stack);
+                }
+                if (!!_idkey && !!window.__moon_report) { //没有初始化_key，直接throw error
+                  window.__moon_report([{ offset: MOON_LISTENER_ERROR_KEY_OFFSET, log: "listener_error;type:" + type + ";host:" + location.host, e: error }]);
+                  //breakOnError(timeoutkey);
+                }
+                throw error;
+              }
+            }
+            _cb.moon_lid = moon_lid;
+            cb_map[moon_lid] = cb;
+            moon_lid++;
+            return foo.call(that, type, cb, useCapture);
+          }
+        }
+        function catRemoveListener(foo) {
+          return function(type, cb, useCapture) {
+            if (typeof useCapture === "undefined") {
+              var useCapture = false;
+            }
+            var that = this;
+            cb = cb_map[cb.moon_lid];
+            return foo.call(that, type, cb, useCapture);
+          }
+        }
+        Document.prototype.addEventListener = catAddListener(Document.prototype.addEventListener);
+        Document.prototype.removeEventListener = catRemoveListener(Document.prototype.removeEventListener);
+        HTMLElement.prototype.addEventListener = catAddListener(HTMLElement.prototype.addEventListener);
+        HTMLElement.prototype.removeEventListener = catRemoveListener(HTMLElement.prototype.removeEventListener);
+      }
+      //alert("setItem begin");
+      //window.localStorage.setItem = function(){a=c;}//故意
+      var ua = window.navigator.userAgent;
+      if ((/ip(hone|ad|od)/i.test(ua) || /android/i.test(ua)) && !/windows phone/i.test(ua) && !!window.localStorage && !!window.localStorage.setItem) {
+        var _setItem = window.localStorage.setItem;
+        var count = 0;
+        window.localStorage.setItem = function(k, v) {
+          if (count >= 10) { //一直失败 不要再继续试了，可能类似safari无痕模式 不允许写入了
+            return;
+          }
+          try {
+            _setItem.call(window.localStorage, k, v);
+          } catch (error) {
+            //alert(error);
+            if (error.stack && console && console.error) { //chrome有bug，特定情况下看不到throw的error，这里console.error下，防止给调试留坑
+              console.error("[TryCatch]" + error.stack);
+            }
+            window.__moon_report([{ offset: MOON_LOCALSTORAGE_ERROR_KEY_OFFSET, log: "localstorage_error;" + error.toString(), e: error }]);
+            count++;
+            if (count >= 3 && !!window.moon && window.moon.clear) {
+              // 可能爆满 清理一下localstorage
+              moon.clear();
+            }
+          }
+        }
+        //alert("setItem end");
+      }
+    })();
+    // 后面的@cunjinli
+  };
+  moon_init();
+  //由于moon异步化，所以有些逻辑需要moon加载完之后才执行的 放到全局callback函数__moon_initcallback里边
+  (!!window.__moon_initcallback) && (window.__moon_initcallback());
+}
+// 为适应inline逻辑，有map时才主动自执行 @zhikaimai
+// if (typeof window.moon_map == 'object') {
+//     __moonf__();
+// }
+__moonf__();
+
+if (!!window.addEventListener){
+  window.addEventListener("load",function(){
+    var MOON_SCRIPT_ERROR_KEY_OFFSET = 1; //script上报时的偏移量为1
+    var ns = document.querySelectorAll("[reportloaderror]");
+    for(var ni=0,nl=ns.length;ni<nl;ni++)
+      ns[ni].onerror=function(ev){
+        window.__moon_report([{ offset: MOON_SCRIPT_ERROR_KEY_OFFSET, log: "load_script_error:" + ev.target.src, e: new Error('LoadResError') }], 1);
+        window.WX_BJ_REPORT.BadJs.report("load_script_error", ev.target.src, { mid: "mmbizwap:Monitor" });
+      };
+  });
+}
+</script>
+
+    <script type="text/javascript" nonce="1412121176" reportloaderror>
+  var testRdmUrl = '//res.wx.qq.com/mmbizwap/zh_CN/htmledition/images/pic/common/avatar_default5cbc32.svg';
+  // 如果是资源是mp域名，则是rdm环境
+  if (testRdmUrl.indexOf('mp.weixin.qq.com') > 0) {
+    window.__allowLoadResFromMp = true; // 允许从mp.weixin.qq.com加载js资源
+    window.__loadAllResFromMp = true; // 所有js资源都从mp域名加载
+
+    // 给底色加个原谅绿
+    document.documentElement.style.boxShadow = 'inset 0 0 15px green';
+  }
+</script>
+
+
+    
+
+  
+  <meta name="description" content="开源最大的魅力是可以跟开发者交流" />
+  <meta name="author" content="肖滢" />
+
+  
+  <meta property="og:title" content="姜宁，带程序员前往开源“乌托邦” | GTLC 人物" />
+  <meta property="og:url" content="" />
+  <meta property="og:image" content="http://mmbiz.qpic.cn/mmbiz_jpg/boqKyJNBCy2gLKGQX3FLfMibnSeQqcMn9qYJzGhe9ZZqKgqT0Pu1M2Q7966wJFQVxkbPUaZadhwI05r9P58BavA/0?wx_fmt=jpeg" />
+  <meta property="og:description" content="开源最大的魅力是可以跟开发者交流" />
+  <meta property="og:site_name" content="微信公众平台" />
+  <meta property="og:type" content="article" />
+  <meta property="og:article:author" content="肖滢" />
+
+  
+  <meta property="twitter:card" content="summary" />
+  <meta property="twitter:image" content="http://mmbiz.qpic.cn/mmbiz_jpg/boqKyJNBCy2gLKGQX3FLfMibnSeQqcMn9qYJzGhe9ZZqKgqT0Pu1M2Q7966wJFQVxkbPUaZadhwI05r9P58BavA/0?wx_fmt=jpeg" />
+  <meta property="twitter:title" content="姜宁，带程序员前往开源“乌托邦” | GTLC 人物" />
+  <meta property="twitter:creator" content="肖滢" />
+  <meta property="twitter:site" content="微信公众平台" />
+  <meta property="twitter:description" content="开源最大的魅力是可以跟开发者交流" />
+
+
+    <title></title>
+    
+<style>
+</style>
+
+
+    
+<script type="module" nonce="1412121176" reportloaderror>!function(){try{new Function("m","return import(m)")}catch(o){console.warn("vite: loading legacy build because dynamic import is unsupported, syntax error above should be ignored");var e=document.getElementById("vite-legacy-polyfill"),n=document.createElement("script");n.src=e.src,n.onload=function(){System.import(document.getElementById('vite-legacy-entry').getAttribute('data-src'))},document.body.appendChild(n)}}();</script>
+<script type="module" crossorigin src="//res.wx.qq.com/mmbizwap/zh_CN/htmledition/js/../mmbizappmsg/assets/appmsg.d3139ebd.js" nonce="1412121176" reportloaderror></script>
+<link rel="modulepreload" href="//res.wx.qq.com/mmbizwap/zh_CN/htmledition/js/../mmbizappmsg/assets/sprite.e3a96375.js" reportloaderror>
+<link rel="modulepreload" href="//res.wx.qq.com/mmbizwap/zh_CN/htmledition/js/../mmbizappmsg/assets/vendor.df117507.js" reportloaderror>
+<link rel="modulepreload" href="//res.wx.qq.com/mmbizwap/zh_CN/htmledition/js/../mmbizappmsg/assets/report.e48becac.js" reportloaderror>
+<link rel="modulepreload" href="//res.wx.qq.com/mmbizwap/zh_CN/htmledition/js/../mmbizappmsg/assets/wxwork_hidden.ec24a5fa.js" reportloaderror>
+<link rel="modulepreload" href="//res.wx.qq.com/mmbizwap/zh_CN/htmledition/js/../mmbizappmsg/assets/loadscript.528caaeb.js" reportloaderror>
+<link rel="modulepreload" href="//res.wx.qq.com/mmbizwap/zh_CN/htmledition/js/../mmbizappmsg/assets/voice_component.580bbc3e.js" reportloaderror>
+<link rel="modulepreload" href="//res.wx.qq.com/mmbizwap/zh_CN/htmledition/js/../mmbizappmsg/assets/lazyload_img.af9f8086.js" reportloaderror>
+<link rel="modulepreload" href="//res.wx.qq.com/mmbizwap/zh_CN/htmledition/js/../mmbizappmsg/assets/outer_link.a840838d.js" reportloaderror>
+<link rel="modulepreload" href="//res.wx.qq.com/mmbizwap/zh_CN/htmledition/js/../mmbizappmsg/assets/review_image.200fec41.js" reportloaderror>
+<link rel="modulepreload" href="//res.wx.qq.com/mmbizwap/zh_CN/htmledition/js/../mmbizappmsg/assets/pay_read_utils.007c377a.js" reportloaderror>
+<link rel="modulepreload" href="//res.wx.qq.com/mmbizwap/zh_CN/htmledition/js/../mmbizappmsg/assets/controller.2c3ab252.js" reportloaderror>
+<link rel="modulepreload" href="//res.wx.qq.com/mmbizwap/zh_CN/htmledition/js/../mmbizappmsg/assets/modal.879910c9.js" reportloaderror>
+
+
+
+
+
+
+
+
+
+<link rel="stylesheet" href="//res.wx.qq.com/mmbizwap/zh_CN/htmledition/js/../mmbizappmsg/assets/appmsg.a50ee2e1.css" reportloaderror>
+<link rel="stylesheet" href="//res.wx.qq.com/mmbizwap/zh_CN/htmledition/js/../mmbizappmsg/assets/sprite.dcee1002.css" reportloaderror>
+<link rel="stylesheet" href="//res.wx.qq.com/mmbizwap/zh_CN/htmledition/js/../mmbizappmsg/assets/wxwork_hidden.00d6a251.css" reportloaderror>
+<link rel="stylesheet" href="//res.wx.qq.com/mmbizwap/zh_CN/htmledition/js/../mmbizappmsg/assets/report.5e0fdfbf.css" reportloaderror>
+<link rel="stylesheet" href="//res.wx.qq.com/mmbizwap/zh_CN/htmledition/js/../mmbizappmsg/assets/controller.800caf0c.css" reportloaderror>
+
+  </head>
+
+  <body id="activity-detail" class="zh_CN wx_wap_page 
+
+    sougou_body
+ comment_feature
+ discuss_tab appmsg_skin_default appmsg_style_default">
+    
+
+    
+<script type="text/javascript" nonce="1412121176" reportloaderror>
+  var biz = "MzA4NTU2MTg3MQ==" || "";
+  var sn = "" || "" || "";
+  var mid = "2655207886" || "" || "";
+  var idx = "1" || "" || "";
+  window.__allowLoadResFromMp = true; // 允许从mp.weixin.qq.com加载js资源
+  // window.__loadAllResFromMp = true; // 所有js资源都从mp域名加载
+</script>
+
+<script  nonce="1412121176" reportloaderror>
+var page_begintime = (+new Date());
+// 辟谣需求
+var is_rumor = "";
+var norumor = "";
+if (!!(is_rumor * 1) && !(norumor*1) && !!biz && !!mid) {
+  if (!document.referrer || document.referrer.indexOf("mp.weixin.qq.com/mp/rumor") == -1){
+    location.href = "http://mp.weixin.qq.com/mp/rumor?action=info&__biz=" + biz + "&mid=" + mid + "&idx=" + idx + "&sn=" + sn + "#wechat_redirect";
+  }
+}
+</script>
+
+<script type="text/javascript" src="//res.wx.qq.com/mmbizwap/zh_CN/htmledition/js/biz_wap/safe/inline_mutation_observer5cbc33.js" nonce="1412121176" reportloaderror></script>
+
+    <link rel="dns-prefetch" href="//res.wx.qq.com" reportloaderror>
+<link rel="dns-prefetch" href="//mmbiz.qpic.cn" reportloaderror>
+<link rel="dns-prefetch" href="https://wxa.wxs.qq.com" reportloaderror>
+<link rel="shortcut icon" type="image/x-icon" href="//res.wx.qq.com/a/wx_fed/assets/res/NTI4MWU5.ico" reportloaderror>
+<link rel="mask-icon" href="//res.wx.qq.com/a/wx_fed/assets/res/MjliNWVm.svg" color="#4C4C4C" reportloaderror>
+<link rel="apple-touch-icon-precomposed" href="//res.wx.qq.com/a/wx_fed/assets/res/OTE0YTAw.png" reportloaderror>
+<script type="text/javascript" nonce="1412121176" reportloaderror>
+String.prototype.html = function (encode) {
+  var replace = ["&#39;", "'", "&quot;", '"', "&nbsp;", " ", "&gt;", ">", "&lt;", "<", "&yen;", "¥", "&amp;", "&"];
+  // 最新版的safari 12有一个BUG，如果使用字面量定义一个数组，var a = [1, 2, 3]
+  // 当调用了 a.reverse() 方法把变量 a 元素顺序反转成 3, 2, 1 后，
+  // 即使此页面刷新了， 或者此页面使用 A标签、 window.open 打开的页面，
+  // 只要调用到同一段代码， 变量 a 的元素顺序都会变成 3, 2, 1
+  // 所以这里不用 reverse 方法
+  /*
+  if (encode) {
+      replace.reverse();
+  }*/
+  var replaceReverse = ["&", "&amp;", "¥", "&yen;", "<", "&lt;", ">", "&gt;", " ", "&nbsp;", '"', "&quot;", "'", "&#39;"];
+  var target;
+  if (encode) {
+    target = replaceReverse;
+  } else {
+    target = replace;
+  }
+  for (var i = 0, str = this; i < target.length; i += 2) {
+    str = str.replace(new RegExp(target[i], 'g'), target[i + 1]);
+  }
+  return str;
+};
+
+window.isInWeixinApp = function () {
+  return /MicroMessenger/.test(navigator.userAgent);
+};
+
+window.getQueryFromURL = function (url) {
+  url = url || 'http://qq.com/s?a=b#rd'; // 做一层保护，保证URL是合法的
+  var tmp = url.split('?'),
+    query = (tmp[1] || "").split('#')[0].split('&'),
+    params = {};
+  for (var i = 0; i < query.length; i++) {
+    var arg = query[i].split('=');
+    params[arg[0]] = arg[1];
+  }
+  if (params['pass_ticket']) {
+    params['pass_ticket'] = encodeURIComponent(params['pass_ticket'].html(false).html(false).replace(/\s/g, "+"));
+  }
+  return params;
+};
+
+(function () {
+  var params = getQueryFromURL(location.href);
+  window.uin = params['uin'] || "" || '';
+  window.key = params['key'] || "" || '';
+  window.wxtoken = params['wxtoken'] || '';
+  window.pass_ticket = params['pass_ticket'] || '';
+  window.appmsg_token = "";
+})();
+</script>
+    
+<script type="text/javascript" nonce="1412121176" reportloaderror>window.PAGE_MID="mmbizwap:appmsg/newindex.html"</script>
+<script type="text/javascript" nonce="1412121176" reportloaderror>
+  var write_sceen_time = (+new Date());
+  var preview = "" * 1 || 0;
+
+  var currencyMap = {
+    'USD': '$',
+    'HKD': 'HK$',
+    'CAD': 'C$',
+    'AUD': 'A$',
+    'TWD': 'NT$',
+    'JPY': 'JPY￥',
+    'EUR': '€',
+    'SGD': 'S$',
+    'GBP': '£',
+    'NZD': 'NZ$',
+    'MYR': 'RM',
+    'KZT': '〒',
+    'KRW': '₩',
+    'THB': '฿',
+    'PHP': '₱',
+    'TRY': '₺',
+    'MXN': 'Mex$',
+    'CNY': '￥'
+  };
+  var can_use_wecoin = '1' * 1; // 是否个人号
+  var wecoin_tips = '0' * 1; // 是否出教育弹窗
+  /* var can_use_wecoin = 1; */
+  var wecoin_amount = '0' * 1; // 微信豆个数
+</script>
+
+<div id="js_article" class="rich_media">
+  
+  <div id="js_top_ad_area" class="top_banner"></div>
+  
+  <div class="rich_media_inner">
+    
+    
+    <div id="page-content" class="rich_media_area_primary">
+      <div class="rich_media_area_primary_inner">
+        
+        
+                <div id="img-content" class="rich_media_wrp">
+          
+          <h1 class="rich_media_title" id="activity-name">
+            
+姜宁，带程序员前往开源“乌托邦” | GTLC 人物
+          </h1>
+          <div id="meta_content" class="rich_media_meta_list">
+                                                                          
+                        <span class="rich_media_meta rich_media_meta_nickname" id="profileBt">
+              <a href="javascript:void(0);" class="wx_tap_link js_wx_tap_highlight weui-wa-hotarea" id="js_name">
+                TGO鲲鹏会              </a>
+              <div id="js_profile_qrcode" aria-hidden="true" class="profile_container" style="display:none;">
+                <div class="profile_inner">
+                  <strong class="profile_nickname">TGO鲲鹏会</strong>
+                  <img class="profile_avatar" id="js_profile_qrcode_img" src="" alt="">
+
+                  <p class="profile_meta">
+                  <label class="profile_meta_label">微信号</label>
+                  <span class="profile_meta_value">tgo-kunpenghui</span>
+                  </p>
+
+                  <p class="profile_meta">
+                  <label class="profile_meta_label">功能介绍</label>
+                  <span class="profile_meta_value">每日分享技术干货与一线大咖动态，助你在成长的路上更具优势。</span>
+                  </p>
+                </div>
+                <span class="profile_arrow_wrp" id="js_profile_arrow_wrp">
+                  <i class="profile_arrow arrow_out"></i>
+                  <i class="profile_arrow arrow_in"></i>
+                </span>
+              </div>
+            </span>
+            <em id="publish_time" class="rich_media_meta rich_media_meta_text"></em>
+          </div>
+
+          
+                                                    <div id="js_tags" class="article-tag__list" style="display: none;" data-len="0"
+                      >
+                          
+              <div class="article-tag-card__title">收录于话题</div>
+              <div class="article-tags">
+                                                                </div>
+                      </div>
+
+          
+                    
+                                        
+
+          
+                      
+            <div class="original_area_primary" style="margin-bottom: 0;">
+                                                        </div>
+
+            
+                          <div class="original_area_primary">
+                <p role="option" class="original_primary_card_tips">
+                                      <span>以下文章来源于OSC开源社区</span>
+                                                        <span>，作者肖滢</span>
+                                  </p>
+                <a class="weui-flex original_primary_card appmsg_card_context wx_tap_card js_wx_tap_highlight" href="#" id="copyright_info">
+                  <div class="weui-flex__hd">
+                    <span class="radius_avatar">
+                      <img class="avatar" src="http://wx.qlogo.cn/mmhead/Q3auHgzwzM7q7KWaogPQuicoIN5DicjknSEngDueFL2HibrRnCNH8PHxQ/0" alt="">
+                    </span>
+                  </div>
+                  <div class="weui-flex__item" role="option">
+                    <strong class="original_primary_nickname">OSC开源社区</strong>
+                                          <span class="weui-hidden_abs">.</span>
+                      <p class="original_primary_desc">开源中国，为开发者服务</p>
+                                      </div>
+                  <div class="weui-flex__ft"></div>
+                </a>
+              </div>
+                                
+
+          
+                              
+                                        
+                    
+                    
+          
+          <div class="rich_media_content " id="js_content" style="visibility: hidden;">
+            <section style="text-align: center;margin-left: 8px;margin-right: 8px;"><img class="rich_pages wxw-img" data-backh="321" data-backw="578" data-galleryid="" data-ratio="0.55546875" data-s="300,640" data-type="jpeg" data-w="1280" style="width: 100%;height: auto !important;" src="https://images.weserv.nl/?url=https://mmbiz.qpic.cn/mmbiz_jpg/boqKyJNBCy2gLKGQX3FLfMibnSeQqcMn9rpCEl02rcq37swFTHjKlrmwVwr75fMDWBFIlmmR7JFO1nQSf8WFiccw/640?wx_fmt=jpeg"  /></section><section style="white-space: normal;color: rgb(63, 63, 63);font-size: 14px;font-family: Avenir, -apple-system-font, 微软雅黑, sans-serif;text-align: center;box-sizing: border-box;"><section style="box-sizing: border-box;"><section style="margin-right: 8px;margin-left: 8px;padding: 19px;box-sizing: border-box;font-size: 15px;text-align: justify;line-height: 27px;color: rgb(89, 89, 89);background-color: rgb(239, 239, 239);">5 月 20 - 21 日，GTLC 峰会全球总站将在北京开幕。本次 GTLC 以“科技向未来”为主题，聚焦科技领域创新，探讨未来创业发展趋势，挖掘科技管理背后底层逻辑。<br  />华为开源能力中心技术专家、Apache 软件基金会 2022 年董事会董事姜宁将担任本次峰会分享嘉宾，与 500+ 及数量到这一同分享他在开源领域的探索与感悟。&nbsp;&nbsp;</section></section><p style="padding-top: 20px;padding-right: 8px;padding-left: 8px;box-sizing: border-box;font-size: 16px;text-align: justify;white-space: pre-line;line-height: 27px;color: rgb(15, 15, 15);">在各种会议或者视频中做自我介绍时，姜宁常常用这张照片——穿着蓝白黑的格子衫，背着双肩包，脸上带着笑，两手直直地放下，任谁看一眼都能猜到，他是程序员。<br  /></p><p style="padding-top: 20px;padding-right: 8px;padding-left: 8px;box-sizing: border-box;font-size: 16px;text-align: justify;white-space: pre-line;line-height: 27px;color: rgb(15, 15, 15);"><img class="rich_pages wxw-img" data-backh="377" data-backw="562" data-galleryid="" data-ratio="0.6703703703703704" data-s="300,640" data-type="png" data-w="1080" style="text-align: center;color: rgb(63, 63, 63);font-size: 14px;width: 100%;height: auto !important;" src="https://images.weserv.nl/?url=https://mmbiz.qpic.cn/mmbiz_png/boqKyJNBCy2gLKGQX3FLfMibnSeQqcMn91VfmtiaaUAqLIyM42Lf5yBzv4tibB41dbAc8aAYKQfoEdDy5y20n8nVw/640?wx_fmt=png"  /></p><p style="padding-top: 20px;padding-right: 8px;padding-left: 8px;box-sizing: border-box;font-size: 16px;text-align: justify;white-space: pre-line;line-height: 27px;color: rgb(15, 15, 15);">他确实做了十几年的程序员，但有一点特别的是，他为 Apache 软件基金会（ASF）的开源项目写代码。一开始，开源于他而言，不过是一份挣钱的职业。被推着走了很久之后，有一天终于意识到，在工作之外，自己要担负起开源布道的责任。</p><p style="padding-top: 20px;padding-right: 8px;padding-left: 8px;box-sizing: border-box;font-size: 16px;text-align: justify;white-space: pre-line;line-height: 27px;color: rgb(15, 15, 15);">一开始只是组织贡献者线下见面，后来发起了 Apache 北京本地社区， 协助成立 Apache 深圳本地社区，将 ASF 项目开发者， 与社区开源爱好者聚在一起。这两年，他还开起了播客，以嘉宾访谈的形式，宣传开源相关的知识和文化。</p><p style="padding-top: 20px;padding-right: 8px;padding-left: 8px;box-sizing: border-box;font-size: 16px;text-align: justify;white-space: pre-line;line-height: 27px;color: rgb(15, 15, 15);">他将“Open Source Community”翻译成“开源共同体”，称之为程序员的乌托邦，是除了 996 ，程序员可以拥有的另一个选择。“在这里，程序员们通过邮件，代码评审一起交流编程心得， 一同协作开发足以改变世界的开源项目，在这里，菜鸟可以够得到高手的帮助，快速成长成为业界大牛。”今年 3 月初，姜宁当选 Apache 软件基金会（ASF ）2022 年度董事。他在董事竞选宣言中说，“希望能够帮助 ASF 打破地域、文化、语言的障碍”。</p><p style="padding-top: 20px;padding-right: 8px;padding-left: 8px;box-sizing: border-box;font-size: 16px;text-align: justify;white-space: pre-line;line-height: 27px;color: rgb(15, 15, 15);">在开源布道的路上，他已然看到了横亘在面前的难以逾越的大山。纵使如此，姜宁也要踏过去。</p><section style="box-sizing: border-box;font-size: 20px;background-image: url(&quot;https://mmbiz.qpic.cn/mmbiz_png/boqKyJNBCy2gLKGQX3FLfMibnSeQqcMn9oqQS5BptaNGjrzoDiaP9UZicZ6JkZ9L7t6bshG47otVcNTsP8ZcHhZEg/640?wx_fmt=png&quot;);background-repeat: no-repeat;background-attachment: initial;background-origin: initial;background-clip: initial;background-position: center 20px;background-size: 112px;"><span style="margin-top: 38px;margin-bottom: 10px;line-height: 48px;color: rgb(234, 84, 41);border-bottom: 2px solid rgb(234, 84, 41);display: inline-block;">01<br  />成为开源布道师</span></section><p style="padding-top: 20px;padding-right: 8px;padding-left: 8px;box-sizing: border-box;font-size: 16px;text-align: justify;white-space: pre-line;line-height: 27px;color: rgb(15, 15, 15);">对姜宁来说，四年前的“抄袭”风波仍然在敲响着警钟。</p><p style="padding-top: 20px;padding-right: 8px;padding-left: 8px;box-sizing: border-box;font-size: 16px;text-align: justify;white-space: pre-line;line-height: 27px;color: rgb(15, 15, 15);">2017 年 6 月，华为开源了微服务框架 ServiceComb，托管在 GitHub 上。及至年底，该框架的 GO 语言版本 go-chassis 也开源了。</p><p style="padding-top: 20px;padding-right: 8px;padding-left: 8px;box-sizing: border-box;font-size: 16px;text-align: justify;white-space: pre-line;line-height: 27px;color: rgb(15, 15, 15);">不料十几天后，go-micro 的作者 Asim 前来讨说法， 因为 go-chassis 使用了其部分代码，但没有按照开源许可证的要求作出声明。经过沟通之后， ServiceComb 团队立即修改了代码，并得到了原作者的认可。事情到这里似乎已经解决。</p><p style="padding-top: 20px;padding-right: 8px;padding-left: 8px;box-sizing: border-box;font-size: 16px;text-align: justify;white-space: pre-line;line-height: 27px;color: rgb(15, 15, 15);">但传到国内后，一切都变了味，舆论把它演变成了华为抄袭。</p><p style="padding-top: 20px;padding-right: 8px;padding-left: 8px;box-sizing: border-box;font-size: 16px;text-align: justify;white-space: pre-line;line-height: 27px;color: rgb(15, 15, 15);">姜宁赶紧在知乎上解释，但并没有多少人关心事情的详细经过，以及他们做了什么，大部分人都盯着他们没做什么，以此发泄情绪，“故意”、“抄袭”、“狡辩”，即便有人发表中立观点，也被指是在为华为洗地。百口莫辩。之后，他没有再追上去解释。</p><p style="padding-top: 20px;padding-right: 8px;padding-left: 8px;box-sizing: border-box;font-size: 16px;text-align: justify;white-space: pre-line;line-height: 27px;color: rgb(15, 15, 15);">现在回过头来看，姜宁正处在职业生涯转型的关键时期。2017 年 1 月，做了十几年开源程序员的他，来到了华为担任开放能力中心的技术专家，成为了一名开源布道师。“我来华为，就是要把我对开源世界的理解， 把我做开源的经验，转化成一些基本实践原则，来帮助项目成长。”没成想，却在一年之后发生了 go-chassis 事件。</p><p style="padding-top: 20px;padding-right: 8px;padding-left: 8px;box-sizing: border-box;font-size: 16px;text-align: justify;white-space: pre-line;line-height: 27px;color: rgb(15, 15, 15);">这件事不仅仅打击了他的个人声誉，还把公司拉下了水，被扣上“抄袭”的帽子。整个项目开发节奏也被打乱，最终 GO 语言部分的微服务框架代码，没有进入 ServiceComb。</p><p style="padding-top: 20px;padding-right: 8px;padding-left: 8px;box-sizing: border-box;font-size: 16px;text-align: justify;white-space: pre-line;line-height: 27px;color: rgb(15, 15, 15);">从事开源开发十多年，他也是第一次遇到这样的事。教训很深刻，让他看到了很多，也学到了很多，深感开源布道重要性。“以前做开源，是跟着大牛学习， 只需要遵守社区的规则，按部就班参与进去就可以。但现在，要带着没有开源协作经验的小朋友们一起开源，需要考虑的事情更多了。”</p><p style="padding-top: 20px;padding-right: 8px;padding-left: 8px;box-sizing: border-box;font-size: 16px;text-align: justify;white-space: pre-line;line-height: 27px;color: rgb(15, 15, 15);">姜宁曾向项目团队成员交代过，要规范使用代码，但很多开发者不重视开源代码的版权，缺乏合规意识，只想快速实现功能。“以为开源的代码，想怎么用就怎么用，想怎么改就怎么改。这种想法是有问题的，最终是会付出沉重代价。”姜宁评判说。</p><p style="padding-top: 20px;padding-right: 8px;padding-left: 8px;box-sizing: border-box;font-size: 16px;text-align: justify;white-space: pre-line;line-height: 27px;color: rgb(15, 15, 15);">事实上，在项目正式开源之前，所有自研代码都会用工具进行查重审查，以确认代码是否符合规范，但工具不能识别所有的问题。</p><p style="padding-top: 20px;padding-right: 8px;padding-left: 8px;box-sizing: border-box;font-size: 16px;text-align: justify;white-space: pre-line;line-height: 27px;color: rgb(15, 15, 15);">他认为，唯有提升程序员的版权意识， 避免片段化引用第三方代码才能彻底解决这一问题。</p><p style="padding-top: 20px;padding-right: 8px;padding-left: 8px;box-sizing: border-box;font-size: 16px;text-align: justify;white-space: pre-line;line-height: 27px;color: rgb(15, 15, 15);">"尽量以库的方式来引用第三方开源代码。否则，很难说清楚自研代码和第三方开源代码的关系，操作稍有不慎，就很容易被扣上抄袭的帽子。如果要修改第三方开源代码，要把需求或者补丁提交到上游代码库。这样即减轻了我们维护第三方代码的工作量，也进一步完善了第三方开源代码的使用生态。”姜宁总结道。</p><p style="padding-top: 20px;padding-right: 8px;padding-left: 8px;box-sizing: border-box;font-size: 16px;text-align: justify;white-space: pre-line;line-height: 27px;color: rgb(15, 15, 15);">他也意识到，开源之后，所有问题都是敞开的，如果涉及大厂，问题会被放大，影响更恶劣。“版权意识，是每个开源人都要具备的。”</p><p style="padding-top: 20px;padding-right: 8px;padding-left: 8px;box-sizing: border-box;font-size: 16px;text-align: justify;white-space: pre-line;line-height: 27px;color: rgb(15, 15, 15);">经此一事，国内更多项目开始关注开源合规的问题。姜宁也经常拿这件事来当反面案例，“不能把别人开源的代码拿来随便用，要严格按照开源许可证的规范来。”</p><p style="padding-top: 20px;padding-right: 8px;padding-left: 8px;box-sizing: border-box;font-size: 16px;text-align: justify;white-space: pre-line;line-height: 27px;color: rgb(15, 15, 15);">这场风波直接让姜宁的职业生涯陷入了危机，但无暇顾及太多，他还有很多事要忙。就在两个月前，ServiceComb 项目捐赠给了 ASF，进入了孵化阶段。</p><p style="padding-top: 20px;padding-right: 8px;padding-left: 8px;box-sizing: border-box;font-size: 16px;text-align: justify;white-space: pre-line;line-height: 27px;color: rgb(15, 15, 15);">姜宁意识到，要想让项目从 ASF 顺利毕业，除了合规发版，还需要构建起健康发展的共同体，发展外部贡献者。而要发展外部贡献者，就要扩大项目的影响力。影响力又是靠用户不断积累起来的，所以要发展更多的用户。</p><p style="padding-top: 20px;padding-right: 8px;padding-left: 8px;box-sizing: border-box;font-size: 16px;text-align: justify;white-space: pre-line;line-height: 27px;color: rgb(15, 15, 15);">他采取的方式很原始，主动跟对项目感兴趣的人聊天，聊业务背景，聊实现细节，聊如何解决大家的痛点问题。起初，姜宁的内心有些抗拒——他以前是一个很少抛头露面的技术宅，转做社区工作后，开始还有些不适应，但随着时间的推移， 他发现，通过这种方式，自己结识了很多志同道合的小伙伴。“慢慢地，通过这种交朋友式的沟通交流，基于对开源项目共同价值的认同，让人与人之间的关系紧密了起来。大家对开源共同体也产生了一定的认同感，会觉得这是我们的项目，而不是某一个人的项目。这样贡献者会投入更多精力进来，项目也会变得更好。”姜宁形容那种感觉，就像创业时找合作伙伴一样，需要通过共同的目标来感召大家。</p><p style="padding-top: 20px;padding-right: 8px;padding-left: 8px;box-sizing: border-box;font-size: 16px;text-align: justify;white-space: pre-line;line-height: 27px;color: rgb(15, 15, 15);">这个方法颇有效果，Apache ServiceComb 逐步吸引了一些外部贡献者，不到一年时间就从 ASF 孵化器顺利毕业，成为顶级项目。</p><p style="padding-top: 20px;padding-right: 8px;padding-left: 8px;box-sizing: border-box;font-size: 16px;text-align: justify;white-space: pre-line;line-height: 27px;color: rgb(15, 15, 15);">虽然参与了很多 Apache 项目的开发， 但直到从零开始完整运作 Apache ServiceComb 项目之后，姜宁才对孵化流程中的 License 合规有了系统化的、全面的理解。他也更加领悟到了构建开源共同体的重要性， 并坚定了向国内更多的开发者传播 Apache 之道的决心。</p><p style="padding-top: 20px;padding-right: 8px;padding-left: 8px;box-sizing: border-box;font-size: 16px;text-align: justify;white-space: pre-line;line-height: 27px;color: rgb(15, 15, 15);">2021 年， Weex 项目的社区成员不再活跃。没有人提交社区报告，甚至连项目发版时都没有足够的 PMC 成员来进行投票。最终，姜宁结束了 Weex 在 Apache 的孵化，这是第一个在他手上退休的项目。他说感到很遗憾。</p><p style="padding-top: 20px;padding-right: 8px;padding-left: 8px;box-sizing: border-box;font-size: 16px;text-align: justify;white-space: pre-line;line-height: 27px;color: rgb(15, 15, 15);">姜宁也希望 Weex 能够善始善终。在此之前，已经有多个导师退出了该项目，他是坚持到最后的人。姜宁比以前更从容了，也看得开：“孵化项目失败，我比其他导师经历的事情，也就更多一些。”随着身份的转变，姜宁对开源的认识也不一样了。</p><p style="padding-top: 20px;padding-right: 8px;padding-left: 8px;box-sizing: border-box;font-size: 16px;text-align: justify;white-space: pre-line;line-height: 27px;color: rgb(15, 15, 15);">以前，姜宁觉得，开源只是程序员关注的事情，大家把代码相关的所有东西都放在网上，谁都能看到，有兴趣的人还可以参与其中，相互协作，把项目打磨得更好。“它是一种更先进的协作开发方式，给程序员的成长提供了一个很好的空间。”</p><p style="padding-top: 20px;padding-right: 8px;padding-left: 8px;box-sizing: border-box;font-size: 16px;text-align: justify;white-space: pre-line;line-height: 27px;color: rgb(15, 15, 15);">现在的他认为，开源不单单是技术领域的问题。在把开源的成功经验复制到企业内部的过程中，他发现，要解释清楚开源的运作原理， 还涉及了很多社会学、经济学的知识，它有很强的人文属性。“从这个角度来说，我又找到一个新的，可以为之奋斗十年的一个方向。”</p><p style="padding-top: 20px;padding-right: 8px;padding-left: 8px;box-sizing: border-box;font-size: 16px;text-align: justify;white-space: pre-line;line-height: 27px;color: rgb(15, 15, 15);">开源之路并非坦途一片。正因如此，让姜宁在开源项目孵化方面积累了很多经验：“我们要遵守开源社区的规则和潜规则，开源许可协议是底线。此外，还有很多优秀开源实践，可以帮助我们的项目走得更快，例如上游优先，小步快跑，社区大于代码等。”</p><section style="box-sizing: border-box;font-size: 20px;background-image: url(&quot;https://mmbiz.qpic.cn/mmbiz_png/boqKyJNBCy2gLKGQX3FLfMibnSeQqcMn9oqQS5BptaNGjrzoDiaP9UZicZ6JkZ9L7t6bshG47otVcNTsP8ZcHhZEg/640?wx_fmt=png&quot;);background-repeat: no-repeat;background-attachment: initial;background-origin: initial;background-clip: initial;background-position: center 20px;background-size: 112px;"><span style="margin-top: 38px;margin-bottom: 10px;line-height: 48px;color: rgb(234, 84, 41);border-bottom: 2px solid rgb(234, 84, 41);display: inline-block;">02<br  />程序员的乌托邦</span></section><p style="padding-top: 20px;padding-right: 8px;padding-left: 8px;box-sizing: border-box;font-size: 16px;text-align: justify;white-space: pre-line;line-height: 27px;color: rgb(15, 15, 15);">在孵化 Apache ServiceComb 的过程中，姜宁意识到，原来通过布道可以影响更多的人。于是在 2018 年及 2019 年，姜宁先后组织了两次国内 ASF 贡献者线下聚会，之后又发起了 Apache 北京本地社区， 协助成立 Apache 深圳本地社区，将开源爱好者汇聚在一起，做一些有意思的事。</p><p style="padding-top: 20px;padding-right: 8px;padding-left: 8px;box-sizing: border-box;font-size: 16px;text-align: justify;white-space: pre-line;line-height: 27px;color: rgb(15, 15, 15);">渐渐地，姜宁认识了越来越多的程序员，特殊的角色让他成为了一个观察者，看到了很多困在程序员身上的枷锁。开源布道的责任，就这样在他心里慢慢生长起来。他想，要用自己十几年的开源经历去告诉大家，还可以有另一种选择。</p><p style="padding-top: 20px;padding-right: 8px;padding-left: 8px;box-sizing: border-box;font-size: 16px;text-align: justify;white-space: pre-line;line-height: 27px;color: rgb(15, 15, 15);"><strong>“开源共同体是程序员的乌托邦。”</strong>姜宁如此认为。他将“Open Source Community”翻译成开源共同体，而不是开源社区。</p><p style="padding-top: 20px;padding-right: 8px;padding-left: 8px;box-sizing: border-box;font-size: 16px;text-align: justify;white-space: pre-line;line-height: 27px;color: rgb(15, 15, 15);">“‘社区’一词，容易和居委会，我们居住的社区混在一起。”姜宁解释说，“Open Source Community 既有生产者（开发人员），也有消费者（使用者）， 大家为了共同的目标（把开源软件打磨得更好）聚在一起， 相互协作共同成长。”</p><p style="padding-top: 20px;padding-right: 8px;padding-left: 8px;box-sizing: border-box;font-size: 16px;text-align: justify;white-space: pre-line;line-height: 27px;color: rgb(15, 15, 15);"><img class="rich_pages wxw-img" data-backh="375" data-backw="562" data-galleryid="" data-ratio="0.6675925925925926" data-s="300,640" data-type="png" data-w="1080" style="text-align: center;color: rgb(63, 63, 63);font-size: 14px;width: 100%;height: auto !important;" src="https://images.weserv.nl/?url=https://mmbiz.qpic.cn/mmbiz_png/boqKyJNBCy2gLKGQX3FLfMibnSeQqcMn9yUhddTom2OBwgbIndh3iaKJe88pH97Yu15etuacCpko6MxFpLjgBh4w/640?wx_fmt=png"  /></p><p><span style="color: rgb(136, 136, 136);">ALC 北京成员聚会（2020 年 8 月，北京）</span></p><p style="padding-top: 20px;padding-right: 8px;padding-left: 8px;box-sizing: border-box;font-size: 16px;text-align: justify;white-space: pre-line;line-height: 27px;color: rgb(15, 15, 15);">他自己就是从开源世界成长起来的，最直接的收获就是技术能力的提升。</p><p style="padding-top: 20px;padding-right: 8px;padding-left: 8px;box-sizing: border-box;font-size: 16px;text-align: justify;white-space: pre-line;line-height: 27px;color: rgb(15, 15, 15);">令姜宁印象深刻的是，早年学习 ACE，看用户手册，学习架构模式，都是自己一个人，好不容易对它有了基本认识，然而却没人可以交流。接着还要花大量时间读文档，看教程，写代码，进展非常缓慢。然而在全职加入开源项目开发之后，在大牛的无私帮助下， 在与用户交流沟通中，通过不断解决开源项目运行的实际问题， 他发现，自己的开发水平有了显著地提升。姜宁第一次体会到开源共同体的魔力。</p><p style="padding-top: 20px;padding-right: 8px;padding-left: 8px;box-sizing: border-box;font-size: 16px;text-align: justify;white-space: pre-line;line-height: 27px;color: rgb(15, 15, 15);">他经常以此鼓励程序员加入开源社区，一步一步跟着项目走，像走阶梯一样，会很扎实地成长起来。“在开源社区，会有很多大神级程序员扮演导师的角色，无条件地把经验传授给年轻的程序员，帮助他们找到技术拓展的空间。”</p><p style="padding-top: 20px;padding-right: 8px;padding-left: 8px;box-sizing: border-box;font-size: 16px;text-align: justify;white-space: pre-line;line-height: 27px;color: rgb(15, 15, 15);">他反复提到一个词，办公室政治。“在开源社区，程序员只要专心研究技术，而不需要考虑办公室政治。”</p><p style="padding-top: 20px;padding-right: 8px;padding-left: 8px;box-sizing: border-box;font-size: 16px;text-align: justify;white-space: pre-line;line-height: 27px;color: rgb(15, 15, 15);">“很多程序员都是在晚上写代码。白天在干啥？被拉着开会。”他看到，国内很多企业，项目出问题后，第一时间是开会，说是定位问题，其实往往是在互相甩锅。“踢皮球踢了半天，问题一点没解决。真的感觉是在浪费生命。”</p><p style="padding-top: 20px;padding-right: 8px;padding-left: 8px;box-sizing: border-box;font-size: 16px;text-align: justify;white-space: pre-line;line-height: 27px;color: rgb(15, 15, 15);">开源社区不是这样。在姜宁眼中，发现问题后，社区成员会主动 debug，不会出现推诿扯皮的情况，而且大家都是通过邮件列表公开交流，目的也都是为了解决同一个问题，所以工作效率很高。他希望这些企业在开会这件事情上，能向 ASF 的董事会学习一下，会前大家通过异步的方式处理相关的报告，每个月开一次，一次不到一个小时。“把开会的时间省下来，大家会更纯粹一点，把自己手上的事情做好，做精，做尖。长期积累精进之后，效率可能提升十倍，百倍。”</p><p style="padding-top: 20px;padding-right: 8px;padding-left: 8px;box-sizing: border-box;font-size: 16px;text-align: justify;white-space: pre-line;line-height: 27px;color: rgb(15, 15, 15);">他想，如果大家都具备开源协作的能力，工作效率会提高很多， 996 这种事情也会少很多，程序员的生存状态也能变得更好，会有更多的时间去创新，做一些更有意思的事情。</p><p style="padding-top: 20px;padding-right: 8px;padding-left: 8px;box-sizing: border-box;font-size: 16px;text-align: justify;white-space: pre-line;line-height: 27px;color: rgb(15, 15, 15);">这支撑着姜宁要当好开源导师，即便他知道，要改变这些事情可能没那么容易。“我没有那么强的能力，但我要告诉大家，在开源社区，你会更自由一些，更高效一些。”</p><p style="padding-top: 20px;padding-right: 8px;padding-left: 8px;box-sizing: border-box;font-size: 16px;text-align: justify;white-space: pre-line;line-height: 27px;color: rgb(15, 15, 15);">姜宁认为，很多公司低效运作的一个因素，就在于中间管理层。但开源社区是扁平化的，“在这里没有项目经理，只有 Technical Leader”。</p><p style="padding-top: 20px;padding-right: 8px;padding-left: 8px;box-sizing: border-box;font-size: 16px;text-align: justify;white-space: pre-line;line-height: 27px;color: rgb(15, 15, 15);">大公司需要有中间层来运转，但不代表没有弊病，他很清楚这些。姜宁一层一层看下来，中间层把下面的人做的事，包装起来去维护他自己的位置，消耗了很多资源。做项目，代码还没写，前期规划设计就花了一半的资源，剩下一半，大部分都放在协调沟通上。</p><p style="padding-top: 20px;padding-right: 8px;padding-left: 8px;box-sizing: border-box;font-size: 16px;text-align: justify;white-space: pre-line;line-height: 27px;color: rgb(15, 15, 15);">姜宁认为：“长期下来，会让人练就另一种能力——包装。在企业，干得好可能还没有说得好。”在开源社区，所有内容都是公开的，把代码写出来，交给用户做验证就可以了，不需要准备精美的材料向上层做汇报，就算要写材料，顶多写一些用户手册、设计文档。</p><p style="padding-top: 20px;padding-right: 8px;padding-left: 8px;box-sizing: border-box;font-size: 16px;text-align: justify;white-space: pre-line;line-height: 27px;color: rgb(15, 15, 15);">而且，国内做得比较好的开发人员，可能过个三五年，就会转行做管理，“变成大家都讨厌的中间层。”这跟他在国外看到的情况恰恰相反。在 ASF 举办的年度社区会议上，他见到过很多很有技术激情的白胡子老爷爷，让他对程序员的职业生涯有了不一样的认识：“给人感觉就是，程序员这口饭，可以吃很长时间。不像国内，认为 35 岁就不行了。”</p><p style="padding-top: 20px;padding-right: 8px;padding-left: 8px;box-sizing: border-box;font-size: 16px;text-align: justify;white-space: pre-line;line-height: 27px;color: rgb(15, 15, 15);">姜宁说，更大的问题是，没有长时间的一线编程经验积累，管理层容易脱离开发层，做技术决策的时候，很难一针见血地指出问题。“如果这个人有 20 年的开发经验， 他设计出来的框架会很稳定。初级开发人员可以直接在框架基础上进一步修修补补，迭代更新， 不会把整个框架推倒从来。”但这样的人在国内很稀缺。</p><p style="padding-top: 20px;padding-right: 8px;padding-left: 8px;box-sizing: border-box;font-size: 16px;text-align: justify;white-space: pre-line;line-height: 27px;color: rgb(15, 15, 15);">对程序员来说，开源还有一个好处就是，可以长期专注于一个领域，从而沉淀自己的技术能力。姜宁认为这种长期积累是很有必要的。</p><p style="padding-top: 20px;padding-right: 8px;padding-left: 8px;box-sizing: border-box;font-size: 16px;text-align: justify;white-space: pre-line;line-height: 27px;color: rgb(15, 15, 15);">他提到了具有 15 年历史的 Apache Camel ，从诞生之日起，很多基础架构一直都没变，因为其创始人 James Strachan 把架子搭得很好。他还补充道，这种能力很难靠走捷径把它学过来，而是要长时间的编程经验的积累。</p><p style="padding-top: 20px;padding-right: 8px;padding-left: 8px;box-sizing: border-box;font-size: 16px;text-align: justify;white-space: pre-line;line-height: 27px;color: rgb(15, 15, 15);">但国内程序员没有多少可供长期从事的项目。“ 我们的项目生命周期可能就是三年， 过了三年就会被推倒，换一波人重新写一遍。这么一来，我们只能做一些低水平的重复劳动。”这样的情况，姜宁见的不少。而且，大部分代码服务于应用层面，只关注业务实现，没有人关心这些代码是否写得精巧、是否易于扩展，是否易于维护。</p><p style="padding-top: 20px;padding-right: 8px;padding-left: 8px;box-sizing: border-box;font-size: 16px;text-align: justify;white-space: pre-line;line-height: 27px;color: rgb(15, 15, 15);">“不可能会有积累。”他说。</p><p style="padding-top: 20px;padding-right: 8px;padding-left: 8px;box-sizing: border-box;font-size: 16px;text-align: justify;white-space: pre-line;line-height: 27px;color: rgb(15, 15, 15);">如姜宁所言，开源项目的代码生命周期会很长，从 1.0 到 2.0，再到 3.0，不断迭代，经过十几二十年，还一直在那儿，正如 Linux 一样。因此，国外程序员专注一个项目十年二十年都是比较常见的。姜宁曾把八年的时间用在了 Apache Camel 项目上，他有一个同事，从 2006 年开始，一直在做 Apache CXF 项目，到现在已经 16 年了。</p><p style="padding-top: 20px;padding-right: 8px;padding-left: 8px;box-sizing: border-box;font-size: 16px;text-align: justify;white-space: pre-line;line-height: 27px;color: rgb(15, 15, 15);">当然，开源项目也会有推倒重来的时候，但是他认为二者是不同的，这是基于之前积累的经验、知识进行的重构，而不是低水平的重复劳动。</p><p style="padding-top: 20px;padding-right: 8px;padding-left: 8px;box-sizing: border-box;font-size: 16px;text-align: justify;white-space: pre-line;line-height: 27px;color: rgb(15, 15, 15);">姜宁在很多场合说过，不喜欢码农这个词，那代表了重复，没有创造力。“程序员应该去创造一些没有的东西，比如工具，来提升自己的工作效率，降低自己的开发强度。”</p><p style="padding-top: 20px;padding-right: 8px;padding-left: 8px;box-sizing: border-box;font-size: 16px;text-align: justify;white-space: pre-line;line-height: 27px;color: rgb(15, 15, 15);">此外，他还站在现实的角度，细数开源能带来的好处。比如在面试时能证明你的技术能力，社区用户帮你测试代码、完善文档，有的还会直接修 bug 打补丁······</p><section style="box-sizing: border-box;font-size: 20px;background-image: url(&quot;https://mmbiz.qpic.cn/mmbiz_png/boqKyJNBCy2gLKGQX3FLfMibnSeQqcMn9oqQS5BptaNGjrzoDiaP9UZicZ6JkZ9L7t6bshG47otVcNTsP8ZcHhZEg/640?wx_fmt=png&quot;);background-repeat: no-repeat;background-attachment: initial;background-origin: initial;background-clip: initial;background-position: center 20px;background-size: 112px;"><span style="margin-top: 38px;margin-bottom: 10px;line-height: 48px;color: rgb(234, 84, 41);border-bottom: 2px solid rgb(234, 84, 41);display: inline-block;">03<br  />难以逾越的大山</span></section><p style="padding-top: 20px;padding-right: 8px;padding-left: 8px;box-sizing: border-box;font-size: 16px;text-align: justify;white-space: pre-line;line-height: 27px;color: rgb(15, 15, 15);">布道，没有开发那么容易。从进入华为那天起他就知道。</p><p style="padding-top: 20px;padding-right: 8px;padding-left: 8px;box-sizing: border-box;font-size: 16px;text-align: justify;white-space: pre-line;line-height: 27px;color: rgb(15, 15, 15);">以前，姜宁跟机器打交道，只要利用好网上资源，沉下心来就能学到技术获得成长。但现在不一样，这个新角色，要求他具备更多的软技能，比如演讲能力、表达能力、说服能力，还要去思考如何影响更多人。华为需要懂开源社区的人，而不是参与过某个具体项目的人。</p><p style="padding-top: 20px;padding-right: 8px;padding-left: 8px;box-sizing: border-box;font-size: 16px;text-align: justify;white-space: pre-line;line-height: 27px;color: rgb(15, 15, 15);">他都走过来了。就连谈起身份的转变，姜宁现在都能笑呵呵说：“哎呀，其实是被逼无奈。”但面前还有一座难以跨过去的大山。</p><p style="padding-top: 20px;padding-right: 8px;padding-left: 8px;box-sizing: border-box;font-size: 16px;text-align: justify;white-space: pre-line;line-height: 27px;color: rgb(15, 15, 15);">“观念的转变是最难的。”姜宁说，“很多人只是把开源当成免费的、能让他快速交活的工具。”他能感受到，国内大部分的开源参与者都是搭便车的心理。把东西拿来用，用的过程出问题了，要么在社区问一下，要么自己埋头修一修，修完了也不回馈上游。“大家不习惯和上游社区进行任何交互，而是把开源项目代码当一个成品，直接拿来用就完了。”</p><p style="padding-top: 20px;padding-right: 8px;padding-left: 8px;box-sizing: border-box;font-size: 16px;text-align: justify;white-space: pre-line;line-height: 27px;color: rgb(15, 15, 15);">姜宁认为，参与开源要有交朋友的心态。大家是在公开的场合进行协作开发，稍微转变观点可以学到更多，而不仅仅是把开源项目当作完成日常工作的工具，因为那只看到了开源表层的东西。</p><p style="padding-top: 20px;padding-right: 8px;padding-left: 8px;box-sizing: border-box;font-size: 16px;text-align: justify;white-space: pre-line;line-height: 27px;color: rgb(15, 15, 15);"><strong>“开源最大的魅力是可以跟开发者交流，他们会给你带来很多惊喜。你会发现，开源项目居然还能这样用。”</strong>做开源项目维护者期间，姜宁最享受的事情就是回邮件。在帮助他人的同时，也加深了他对问题的理解，就像在玩打怪升级的游戏一样。人与人之间互动产生的思想火花的碰撞，会让人成长更快。</p><p style="padding-top: 20px;padding-right: 8px;padding-left: 8px;box-sizing: border-box;font-size: 16px;text-align: justify;white-space: pre-line;line-height: 27px;color: rgb(15, 15, 15);">在开发 Apache Camel 项目时，只要与他互动的人在北京，姜宁就会想办法跟对方见面。不过最终见面的只有两三个人。他觉得有点奇怪，明明有很多人下载软件，却看不到他们。他鼓励更多人跟上游交流互动，这是一个深度参与开源的机会。“要勇敢迈出第一步，只要参与进来，会有很多热心的人帮助你。”</p><p style="padding-top: 20px;padding-right: 8px;padding-left: 8px;box-sizing: border-box;font-size: 16px;text-align: justify;white-space: pre-line;line-height: 27px;color: rgb(15, 15, 15);"><img class="rich_pages wxw-img" data-backh="421" data-backw="562" data-galleryid="" data-ratio="0.75" data-s="300,640" data-type="png" data-w="1080" style="text-align: center;color: rgb(63, 63, 63);font-size: 14px;width: 100%;height: auto !important;" src="https://images.weserv.nl/?url=https://mmbiz.qpic.cn/mmbiz_png/boqKyJNBCy2gLKGQX3FLfMibnSeQqcMn9yzbngYcibu8VrXA0J0ROKRov8oNbBrXbcs1TBhYSLWSwwQMTpdC01TA/640?wx_fmt=png"  /></p><p><span style="color: rgb(136, 136, 136);">Apache Meetup（2018 年 10 月 上海）</span></p><p style="padding-top: 20px;padding-right: 8px;padding-left: 8px;box-sizing: border-box;font-size: 16px;text-align: justify;white-space: pre-line;line-height: 27px;color: rgb(15, 15, 15);">对姜宁而言，在进行 ASF 项目孵化的时候会比较轻松，因为大部分开发者对开源运作流程有所了解，只要稍微引导就可以。“告诉他们，要公开透明，要用邮件列表交流，再进一步解决流程、合规等问题，最后是社区建设，把门槛降低，鼓励更多人参与进来。这些方面做到位，项目自然就发展起来了。”</p><p style="padding-top: 20px;padding-right: 8px;padding-left: 8px;box-sizing: border-box;font-size: 16px;text-align: justify;white-space: pre-line;line-height: 27px;color: rgb(15, 15, 15);">但要在公司内部推广开源，姜宁说，太难了。</p><p style="padding-top: 20px;padding-right: 8px;padding-left: 8px;box-sizing: border-box;font-size: 16px;text-align: justify;white-space: pre-line;line-height: 27px;color: rgb(15, 15, 15);">技术上实施起来并不难，难的是如何让大家主动地参与开源。姜宁看到，虽然已经把代码放在内部公共仓，也鼓励大家把技术用起来，但还是有很多人觉得，自己知道代码的执行细节就行了，不需要告诉别人开发相关的背景和知识。“他没有体会到，公开与代码相关的上下文信息 ，沟通成本会更低，协作会更容易。”</p><p style="padding-top: 20px;padding-right: 8px;padding-left: 8px;box-sizing: border-box;font-size: 16px;text-align: justify;white-space: pre-line;line-height: 27px;color: rgb(15, 15, 15);">姜宁说，大量的开发者都没有开源经历，难以理解开源协作是一种怎样的方式。没有实际的体验，大部分人都是机械地按照公司要求来做开源，领导关注事情就能落地，领导不关注的，往往做不到位。如果决策者或者推动者也没有经历过开源，就连沟通开源这件事本身，都可能存在很大阻力。</p><p style="padding-top: 20px;padding-right: 8px;padding-left: 8px;box-sizing: border-box;font-size: 16px;text-align: justify;white-space: pre-line;line-height: 27px;color: rgb(15, 15, 15);">在很多大公司，跨部门协作也比较难。虽然每个人能力都很强，但各部门都有自己的地盘，人与人之间，就形成了一堵无形的墙。“我不跨过去，你也不要踏进来。得用各种各样的手段才能让各部门协同。”这让姜宁颇为苦恼，因为在开源社区，加入进来的人都有共同目标，所以在做一件事的时候，大家都是尽量相互配合，给予鼓励，而不是设置障碍。</p><p style="padding-top: 20px;padding-right: 8px;padding-left: 8px;box-sizing: border-box;font-size: 16px;text-align: justify;white-space: pre-line;line-height: 27px;color: rgb(15, 15, 15);">不管是社区开源，还是公司内部开源，遇到的这些难题，归根结底还是观念问题，大家缺乏开放式协作的意识。</p><p style="padding-top: 20px;padding-right: 8px;padding-left: 8px;box-sizing: border-box;font-size: 16px;text-align: justify;white-space: pre-line;line-height: 27px;color: rgb(15, 15, 15);">“只能一步一步来。”姜宁说。他能想到的解决之道，就是让更多人参与到开源中来。“只要参与到开源社区里面，就会发现，协作是一个很自然的做事方式。你帮我，我帮你，自然而然地，就能把事情做好。到时候就不需要再去改变大家的观念了。”</p><p style="padding-top: 20px;padding-right: 8px;padding-left: 8px;box-sizing: border-box;font-size: 16px;text-align: justify;white-space: pre-line;line-height: 27px;color: rgb(15, 15, 15);">“但这个过程可能要花很长时间。”他补充说，最好的方式就是，大家直接参与开源项目，边看边学，成长会很快。</p><section style="box-sizing: border-box;font-size: 20px;background-image: url(&quot;https://mmbiz.qpic.cn/mmbiz_png/boqKyJNBCy2gLKGQX3FLfMibnSeQqcMn9oqQS5BptaNGjrzoDiaP9UZicZ6JkZ9L7t6bshG47otVcNTsP8ZcHhZEg/640?wx_fmt=png&quot;);background-repeat: no-repeat;background-attachment: initial;background-origin: initial;background-clip: initial;background-position: center 20px;background-size: 112px;"><span style="margin-top: 38px;margin-bottom: 10px;line-height: 48px;color: rgb(234, 84, 41);border-bottom: 2px solid rgb(234, 84, 41);display: inline-block;">04<br  />开源滋养了他</span></section><p style="padding-top: 20px;padding-right: 8px;padding-left: 8px;box-sizing: border-box;font-size: 16px;text-align: justify;white-space: pre-line;line-height: 27px;color: rgb(15, 15, 15);">在经历过开源的暗面之后，姜宁仍然能看到开源美好的一面，坚称“开源共同体是程序员的乌托邦”。作为程序员，他真真切切获得过开源的滋养，经历的开源是美好的、轻松的、自由的。</p><p style="padding-top: 20px;padding-right: 8px;padding-left: 8px;box-sizing: border-box;font-size: 16px;text-align: justify;white-space: pre-line;line-height: 27px;color: rgb(15, 15, 15);">那是 2005 年，姜宁离开国企，进入海纳（IONA）亚太研发中心，参与开发 CXF 项目。一年之后，公司把 CXF 捐赠给了 ASF。作为 Apache CXF 的初始 committer，姜宁很轻松地加入了 ASF。</p><p style="padding-top: 20px;padding-right: 8px;padding-left: 8px;box-sizing: border-box;font-size: 16px;text-align: justify;white-space: pre-line;line-height: 27px;color: rgb(15, 15, 15);">毫无波澜地，他的开源之旅就这样开始了。“没有人专门给我做培训，就把我扔到社区里面。别人怎么做，我们照着那个样子做，很多时候就是边看边学。我们从公司的 nobody 变成了公司的 somebody。”</p><p style="padding-top: 20px;padding-right: 8px;padding-left: 8px;box-sizing: border-box;font-size: 16px;text-align: justify;white-space: pre-line;line-height: 27px;color: rgb(15, 15, 15);">在大部分人的眼中，开源都是与“志愿”联系在一起，意味着要占用大量业余时间，且没有收入。而姜宁早期经历的开源却不大一样，他是拿着工资做开源，跟正常上班什么区别。</p><p style="padding-top: 20px;padding-right: 8px;padding-left: 8px;box-sizing: border-box;font-size: 16px;text-align: justify;white-space: pre-line;line-height: 27px;color: rgb(15, 15, 15);">姜宁说，自己是幸运的，没有经历过做开源还要考虑生计这样的事。他曾在播客中提到：“过去十到十五年，我国开源充满了悲壮的个人英雄主义，大部分开源项目都不赚钱，主要靠情怀。然而光有情怀，很难持续下去。”</p><p style="padding-top: 20px;padding-right: 8px;padding-left: 8px;box-sizing: border-box;font-size: 16px;text-align: justify;white-space: pre-line;line-height: 27px;color: rgb(15, 15, 15);">真正让他有成就感的，却是另一个项目——Apache Camel。当时，Camel 想集成 CXF，作为 CXF 核心开发者的姜宁，正好也想多参与一些 ASF 项目的开发，于是就开始接触 Camel。</p><p style="padding-top: 20px;padding-right: 8px;padding-left: 8px;box-sizing: border-box;font-size: 16px;text-align: justify;white-space: pre-line;line-height: 27px;color: rgb(15, 15, 15);">为了成为 Camel 的 Committer，他老老实实地按照 CXF 中的“ Getting Involved ”提示，一边熟悉 ASF 的工作方式，一边不断用提交补丁的方式“骚扰” Camel 项目中的其他 Committer，花了半年时间，最终为自己挣足了信用，在 2008 年初成为了 Committer 。姜宁说，这让他“赢得了大家的认可， 再次体验了一下成为 Apache committer 的快乐”。</p><p style="padding-top: 20px;padding-right: 8px;padding-left: 8px;box-sizing: border-box;font-size: 16px;text-align: justify;white-space: pre-line;line-height: 27px;color: rgb(15, 15, 15);">这一次他经历的开源，跟之前很不一样。用他自己的话说，之前成为 Committer 是占了 CXF 的便宜， 因为初始 Committer 不需要走 ASF 的惯用流程。而这一次，是姜宁一步步走过来的，是丰满的，具体的。</p><p style="padding-top: 20px;padding-right: 8px;padding-left: 8px;box-sizing: border-box;font-size: 16px;text-align: justify;white-space: pre-line;line-height: 27px;color: rgb(15, 15, 15);">在此期间，姜宁结识了 Apache Camel 的创始人 James Strachan。几年后回过头来看，那时国内开源环境并未形成，没有什么可借鉴的开源经验，一切都要靠自己摸索，而 James Strachan 称得上是姜宁的开源引路人。“他真正地扩展了我的视野，带领我去追求新的前沿技术。”多年后，姜宁还在各种公开场合多次提及这位引路人。</p><p style="padding-top: 20px;padding-right: 8px;padding-left: 8px;box-sizing: border-box;font-size: 16px;text-align: justify;white-space: pre-line;line-height: 27px;color: rgb(15, 15, 15);">也正是在 2008 年，IONA 被 Progress Software 公司收购，北京办公室解散，20 多个员工都找工作去了，姜宁和另一个开发同事作为“善后”的留守人员，继续维护这两个项目。姜宁记得很清楚：“我们当时有 12 个开发人员，分成了两拨。我们两人留下，另外十个人，大部分都去了红帽公司。”</p><p style="padding-top: 20px;padding-right: 8px;padding-left: 8px;box-sizing: border-box;font-size: 16px;text-align: justify;white-space: pre-line;line-height: 27px;color: rgb(15, 15, 15);">没了办公室，姜宁就在家上班，做的还是那些事儿，只不过，给他发工资的，变成了 Progress Software。两年后，他所在部门从 Process Software 独立，成立了开源创业公司 FuseSource， 几年后， FuseSource 被红帽收购，姜宁也就顺势成为了红帽员工，和 IONA 的前同事汇合了。</p><p style="padding-top: 20px;padding-right: 8px;padding-left: 8px;box-sizing: border-box;font-size: 16px;text-align: justify;white-space: pre-line;line-height: 27px;color: rgb(15, 15, 15);">Apache Camel 这个项目，见证了姜宁完整的成长，从 committer 到项目 maintainer，再到 ASF member。在一则媒体采访的视频中，他回想起收到 ASF 的 member 邀请邮件，填完信息注册表的那一刻，不禁笑了起来：“我好高兴。这相当于 Apache 软件基金会对我的认同。成为 member 之后意味着一件事，就是我可以 mentor 项目。”那是 2011 年 1 月，距离他加入 Camel 开发已近 4 年时间。</p><p style="padding-top: 20px;padding-right: 8px;padding-left: 8px;box-sizing: border-box;font-size: 16px;text-align: justify;white-space: pre-line;line-height: 27px;color: rgb(15, 15, 15);">2015 年，姜宁从红帽离职，结束了七年专职开源，在家办公的生活。他现在经常怀念那时候——既能自主选择工作时间和内容，又可以照顾家庭。</p><p style="padding-top: 20px;padding-right: 8px;padding-left: 8px;box-sizing: border-box;font-size: 16px;text-align: justify;white-space: pre-line;line-height: 27px;color: rgb(15, 15, 15);">“我不能保证八小时全情投入，但有五六个小时，肯定是专注的。”上午八点开始工作，中午休息两小时，之后接着工作，一直到下午四点半，这时候姜宁就要去幼儿园接孩子，然后做晚饭。</p><p style="padding-top: 20px;padding-right: 8px;padding-left: 8px;box-sizing: border-box;font-size: 16px;text-align: justify;white-space: pre-line;line-height: 27px;color: rgb(15, 15, 15);">占用了一个半小时的工作时间，姜宁就在晚上补回来，“晚上八点到十点，在线 2 小时”。尽管白天工作五六个小时，已经基本把重要的事情都处理完了。</p><p style="padding-top: 20px;padding-right: 8px;padding-left: 8px;box-sizing: border-box;font-size: 16px;text-align: justify;white-space: pre-line;line-height: 27px;color: rgb(15, 15, 15);">妻子周末加班，周四才能休息，姜宁就跟着调整自己的工作计划。“周四出去玩，比周末要好，因为时间错开了，景区也没那么拥挤。”他说着说着，就笑了。</p><p style="padding-top: 20px;padding-right: 8px;padding-left: 8px;box-sizing: border-box;font-size: 16px;text-align: justify;white-space: pre-line;line-height: 27px;color: rgb(15, 15, 15);">在家能把工作做好，姜宁也备受公司信任。“领导考核看的也是你交的活儿，而不是你具体什么时间在上班。”</p><p style="padding-top: 20px;padding-right: 8px;padding-left: 8px;box-sizing: border-box;font-size: 16px;text-align: justify;white-space: pre-line;line-height: 27px;color: rgb(15, 15, 15);">这与现在很多中层管理者的做法恰恰相反。“他会特别关注你是不是在摸鱼，如果是在摸鱼，那你肯定有问题，要不然就是工作不饱和，使劲给你加活儿。这就导致大家都没有太多留白的时间。管理者在努力扇鞭子赶着员工往前走，员工就没有时间去想，我下一步要做哪些事情去提高能力。这样大家的能力提升不了，干活的效率也越来越低。”</p><p style="padding-top: 20px;padding-right: 8px;padding-left: 8px;box-sizing: border-box;font-size: 16px;text-align: justify;white-space: pre-line;line-height: 27px;color: rgb(15, 15, 15);">唯一不足的是，工作和生活分不开。邮件驱动他加班。只要用户邮件一来，姜宁就赶紧回复，已经形成了习惯。然而邮件一直来，一直来，妻子说他，“永远有干不完的活”。</p><p style="padding-top: 20px;padding-right: 8px;padding-left: 8px;box-sizing: border-box;font-size: 16px;text-align: justify;white-space: pre-line;line-height: 27px;color: rgb(15, 15, 15);">十多年前，姜宁手机还不能收发电子邮件，直到诺基亚 720 手机出来。姜宁记忆深刻：”全键盘的手机，当时就觉得，哇塞，这个手机好好，终于可以随时随地回邮件了，爽很多。”手机到手后，陪妻子逛街时，他就找个角落，隔几秒就刷一遍收件箱，盯着邮件列表上那些问题，抓自己知道的，随时回复。</p><p style="padding-top: 20px;padding-right: 8px;padding-left: 8px;box-sizing: border-box;font-size: 16px;text-align: justify;white-space: pre-line;line-height: 27px;color: rgb(15, 15, 15);">有时也会有些小小的孤独。他专注工作，对外的连接并不多，跟别人的语言交流很少，更多的是写邮件，而且很多时候是跟老外交流。“在家时间长了，懂我的人比较少。当时在微博上认识了一票人，周末活动的时候见面，特别开心，可以说好多话。”</p><p style="padding-top: 20px;padding-right: 8px;padding-left: 8px;box-sizing: border-box;font-size: 16px;text-align: justify;white-space: pre-line;line-height: 27px;color: rgb(15, 15, 15);">总的来说，那几年，能够专心做开源项目，是姜宁非常享受的一段时间，因为工作内容比较单纯，自己的技术能力也在不断增长。</p><section style="box-sizing: border-box;font-size: 20px;background-image: url(&quot;https://mmbiz.qpic.cn/mmbiz_png/boqKyJNBCy2gLKGQX3FLfMibnSeQqcMn9oqQS5BptaNGjrzoDiaP9UZicZ6JkZ9L7t6bshG47otVcNTsP8ZcHhZEg/640?wx_fmt=png&quot;);background-repeat: no-repeat;background-attachment: initial;background-origin: initial;background-clip: initial;background-position: center 20px;background-size: 112px;"><span style="margin-top: 38px;margin-bottom: 10px;line-height: 48px;color: rgb(234, 84, 41);border-bottom: 2px solid rgb(234, 84, 41);display: inline-block;">05<br  />履新之后</span></section><p style="padding-top: 20px;padding-right: 8px;padding-left: 8px;box-sizing: border-box;font-size: 16px;text-align: justify;white-space: pre-line;line-height: 27px;color: rgb(15, 15, 15);">今年 3 月初，Apache 软件基金会（ASF ）公布了新的董事会成员名单，姜宁名列其中。他说自己曾经是一个佛系的技术宅，然而 ASF 董事这个新身份，却是他主动争取的。20 个候选人竞争上岗，最终只有 9 个人脱颖而出。</p><p style="padding-top: 20px;padding-right: 8px;padding-left: 8px;box-sizing: border-box;font-size: 16px;text-align: justify;white-space: pre-line;line-height: 27px;color: rgb(15, 15, 15);">这次竞选董事的宣言，姜宁花了很长时间去思考，到底要讲哪些东西。最终出来的稿件，没有什么夸大的言辞，只是把他做过的几件事，以及为什么要做这些事讲了出来。“让大家去相信，我就有这样的能力参与基金会治理。”</p><p style="padding-top: 20px;padding-right: 8px;padding-left: 8px;box-sizing: border-box;font-size: 16px;text-align: justify;white-space: pre-line;line-height: 27px;color: rgb(15, 15, 15);">唯一一句口号式的句子，是他说，“希望能够帮助 ASF 打破地域、文化、语言的障碍。”多年 ASF 开源项目孵化的经历，给了他说出这句话的底气。这些年，他先后帮助孵化了近 10 个来自中国的 Apache 项目。他深知语言和文化隔阂带来的沟通问题。</p><p style="padding-top: 20px;padding-right: 8px;padding-left: 8px;box-sizing: border-box;font-size: 16px;text-align: justify;white-space: pre-line;line-height: 27px;color: rgb(15, 15, 15);">一年一度的 ApacheCon 是 Apache 项目开发者相聚一堂的好机会。但 ApacheCon 在北美举办，不是所有人都有机会参加，比如他自己在办理签证时就遇到过一些问题。于是他开始拉着 ALC Beijing 的小伙伴，把 ApacheCon Asia 办了起来；了解到很多人不理解开源文化和 Apache 之道，他发起成立 Apache 本地社区，邀请国内外开源人士一起科普，办活动，做交流，写文章，开播客；随着越来越多国内项目进入 ASF , 语言和文化成为中外开发者交流的一个阻碍，于是，姜宁主动担任起导师和桥梁的角色，减少双方之间的隔阂，让他们更好地了解彼此。</p><p style="padding-top: 20px;padding-right: 8px;padding-left: 8px;box-sizing: border-box;font-size: 16px;text-align: justify;white-space: pre-line;line-height: 27px;color: rgb(15, 15, 15);"><img class="rich_pages wxw-img" data-backh="323" data-backw="562" data-galleryid="" data-ratio="0.575" data-s="300,640" data-type="png" data-w="1080" style="text-align: center;color: rgb(63, 63, 63);font-size: 14px;width: 100%;height: auto !important;" src="https://images.weserv.nl/?url=https://mmbiz.qpic.cn/mmbiz_png/boqKyJNBCy2gLKGQX3FLfMibnSeQqcMn9B9kL6FBURDzbLRt30QvlzRfniaxDib1iaFfs89o1F2IJg7YrUslpveeKg/640?wx_fmt=png"  /></p><p><span style="color: rgb(136, 136, 136);">在 ALC Beijing 的播客节目，姜宁与 Tison（公众号“夜天之书”主创）对话</span></p><p style="padding-top: 20px;padding-right: 8px;padding-left: 8px;box-sizing: border-box;font-size: 16px;text-align: justify;white-space: pre-line;line-height: 27px;color: rgb(15, 15, 15);">成为 ASF 董事之后，姜宁肩上的担子又更重了一些。工作和开源并不能严格分开，偶尔，姜宁也会在工作时间处理一些和基金会相关的事务，但华为没有干涉，反而大力支持。</p><p style="padding-top: 20px;padding-right: 8px;padding-left: 8px;box-sizing: border-box;font-size: 16px;text-align: justify;white-space: pre-line;line-height: 27px;color: rgb(15, 15, 15);">他也清楚地知道自己的短板：“站在董事的角度上，要推动 ASF 发展壮大，不仅需要国际化的视野，同时还要立足本土，把国内程序员带动起来。我以前的项目孵化经验，只能起到 40% 的作用，剩下 60% 的那部分，要自己去提升。”</p><p style="padding-top: 20px;padding-right: 8px;padding-left: 8px;box-sizing: border-box;font-size: 16px;text-align: justify;white-space: pre-line;line-height: 27px;color: rgb(15, 15, 15);">在 ASF 担任董事， 姜宁没有薪资，驱动他的，是不知何时驻扎在他心里的开源布道的责任。以前，姜宁是一个开源的亲历者，现在是观察者，推进者和领路人，他很乐意分享自己的经验，来帮助他人排除一些障碍。他想让更多人知道，开源这条路是宽广明亮的。</p><p style="padding-top: 20px;padding-right: 8px;padding-left: 8px;box-sizing: border-box;font-size: 16px;text-align: justify;white-space: pre-line;line-height: 27px;color: rgb(15, 15, 15);">问其为何要这么做，他说：“开源是一种很好的协作方式，能让世界各地的开发者协同起来，跨越公司，跨越国界，去做一些对整个人类都有意义的事。”</p><p style="padding-top: 20px;padding-right: 8px;padding-left: 8px;box-sizing: border-box;font-size: 16px;text-align: justify;white-space: pre-line;line-height: 27px;color: rgb(15, 15, 15);">尤其是现在国际局势紧张，很多开源社区纷纷表态站队，姜宁很珍惜这种全球开发者协同的途径，也想尽量去呵护这个途径。</p><p style="padding-top: 20px;padding-right: 8px;padding-left: 8px;box-sizing: border-box;font-size: 16px;text-align: justify;white-space: pre-line;line-height: 27px;color: rgb(15, 15, 15);">“开源是一个热词，但很多人没有亲历过开源项目的运作，对开源的理解还比较片面，有可能被一些别有用心的人利用。所以我觉得还是要站出来，去呼吁，让更多人理解开源，把全世界开发者协同的这条路走好。我会尽自己的力量去推动开源事业在国内国际的发展，发挥好桥梁的作用，更好地把开源精神贯彻下来。”</p><p style="padding-top: 20px;padding-right: 8px;padding-left: 8px;box-sizing: border-box;font-size: 16px;text-align: justify;white-space: pre-line;line-height: 27px;color: rgb(15, 15, 15);">在开源这条路上，姜宁要做的事情还有很多，可以预见的是，要面对的难题也有很多。但没有关系，当他带着程序员前往乌托邦时，就会有很多和他一样手持炬火的人，照亮前进的路。</p></section><section style="white-space: normal;outline: 0px;max-width: 100%;box-sizing: border-box;letter-spacing: 0.544px;background-color: rgb(255, 255, 255);color: rgb(63, 63, 63);font-size: 14px;font-family: Avenir, -apple-system-font, 微软雅黑, sans-serif;text-align: center;visibility: visible;overflow-wrap: break-word !important;"><section style="outline: 0px;max-width: 100%;box-sizing: border-box;overflow-wrap: break-word !important;"><section style="margin-top: 30px;margin-left: 8px;outline: 0px;max-width: 100%;box-sizing: border-box;font-size: 16px;text-align: left;color: rgb(234, 84, 41);overflow-wrap: break-word !important;"><span style="margin-right: 4px;outline: 0px;max-width: 100%;display: inline-block;width: 15px;height: 15px;background-image: url(&quot;https://mmbiz.qpic.cn/mmbiz_png/boqKyJNBCy2lmCVfa1N4GwFDxic4yMhkDDR87Kg9DeOEcgMAfEzDJUon2aYbKCibYK0vZfzEbkJibAzR2ECARO4hA/640?wx_fmt=png&quot;);background-position: center center;background-repeat: no-repeat;background-attachment: initial;background-origin: initial;background-clip: initial;background-size: 100% 100%;box-sizing: border-box !important;overflow-wrap: break-word !important;"></span>&nbsp;活动推荐</section><p style="padding-top: 20px;padding-right: 8px;padding-left: 8px;outline: 0px;max-width: 100%;box-sizing: border-box;font-size: 16px;text-align: justify;white-space: pre-line;line-height: 27px;color: rgb(15, 15, 15);overflow-wrap: break-word !important;">作为技术管理者如何在科技洪流中借势突围，把握时代脉搏？从技术专家到管理者，如何快速拥抱变化，组建高效能团队？2022 年 5 月 20-21 日，GTLC 全球总站将在北京开幕。本次 GTLC 以“科技向未来”为主题，聚焦科技领域创新，探讨未来创业发展趋势，挖掘科技管理背后底层逻辑。首批讲师已强势集结，聚焦领导力提升、开源、科技创投等多个领域，7 折购票限时抢购中，更多大会详情可扫描二维码查看。</p><p style="padding-top: 20px;padding-right: 8px;padding-left: 8px;outline: 0px;max-width: 100%;box-sizing: border-box;font-size: 16px;text-align: justify;white-space: pre-line;line-height: 27px;color: rgb(15, 15, 15);overflow-wrap: break-word !important;"><img class="rich_pages wxw-img" data-backh="312" data-backw="562" data-galleryid="" data-ratio="0.5555555555555556" data-s="300,640" data-type="png" data-w="1800" style="outline: 0px;text-align: center;color: rgb(63, 63, 63);font-size: 14px;width: 100%;box-sizing: border-box !important;overflow-wrap: break-word !important;visibility: visible !important;height: auto !important;" src="https://images.weserv.nl/?url=https://mmbiz.qpic.cn/mmbiz_png/boqKyJNBCy2lmCVfa1N4GwFDxic4yMhkD72cKhhfX2GCmk0vuibm3xK5Segq03jrEB8ObyFAcXb779RZVP2epPKw/640?wx_fmt=png"  /></p></section></section><section style="white-space: normal;outline: 0px;max-width: 100%;box-sizing: border-box;letter-spacing: 0.544px;color: rgb(63, 63, 63);font-family: Avenir, -apple-system-font, 微软雅黑, sans-serif;font-size: 14px;text-align: center;background-color: rgb(255, 255, 255);overflow-wrap: break-word !important;"><section style="outline: 0px;max-width: 100%;box-sizing: border-box;overflow-wrap: break-word !important;"><hr style="margin-top: 28px;outline: 0px;max-width: 100%;height: 1px;border-top-style: dotted;border-top-color: rgb(165, 165, 165);box-sizing: border-box !important;overflow-wrap: break-word !important;"  /><section style="outline: 0px;max-width: 100%;box-sizing: border-box;font-size: 20px;background-image: url(&quot;https://mmbiz.qpic.cn/mmbiz_png/boqKyJNBCy3ZWvydPbcxL9bBlIelDic17my3NicYLyC2b7gWQ61rGajcjibhAGpk9M8RTyCjZ7mCtANGbNwibPhB1Q/640?wx_fmt=png&quot;);background-repeat: no-repeat;background-attachment: initial;background-origin: initial;background-clip: initial;background-position: center 20px;background-size: 112px;overflow-wrap: break-word !important;"><span style="margin-top: 38px;margin-bottom: 10px;outline: 0px;max-width: 100%;line-height: 48px;color: rgb(234, 84, 41);border-bottom: 2px solid rgb(234, 84, 41);display: inline-block;box-sizing: border-box !important;overflow-wrap: break-word !important;">推荐阅读</span></section></section></section><section style="white-space: normal;outline: 0px;max-width: 100%;box-sizing: border-box;letter-spacing: 0.544px;color: rgb(63, 63, 63);font-family: Avenir, -apple-system-font, 微软雅黑, sans-serif;font-size: 14px;text-align: center;background-color: rgb(255, 255, 255);overflow-wrap: break-word !important;"><section style="padding-top: 15px;padding-right: 8px;padding-left: 8px;outline: 0px;max-width: 100%;box-sizing: border-box;overflow-wrap: break-word !important;"><p style="outline: 0px;max-width: 100%;box-sizing: border-box !important;overflow-wrap: break-word !important;"><span style="outline: 0px;max-width: 100%;color: rgb(136, 136, 136);box-sizing: border-box !important;overflow-wrap: break-word !important;">点击下方图片即可阅读</span></p><p style="outline: 0px;max-width: 100%;box-sizing: border-box !important;overflow-wrap: break-word !important;"><br style="outline: 0px;max-width: 100%;box-sizing: border-box !important;overflow-wrap: break-word !important;"  /></p><p style="outline: 0px;max-width: 100%;box-sizing: border-box !important;overflow-wrap: break-word !important;"><a target="_blank" href="http://mp.weixin.qq.com/s?__biz=MzA4NTU2MTg3MQ==&amp;mid=2655206761&amp;idx=1&amp;sn=7295d365ed3acc25c37f7561cae08f52&amp;chksm=84619a09b316131fca573eb1482f1d68d2c9e8d9f2513d68a7b5d04cdc116762ecd08b447683&amp;scene=21#wechat_redirect" textvalue="你已选中了添加链接的内容" linktype="text" imgurl="" imgdata="null" data-itemshowtype="0" tab="innerlink" data-linktype="1" wah-hotarea="click" hasload="1" style="outline: 0px;-webkit-tap-highlight-color: rgba(0, 0, 0, 0);cursor: pointer;max-width: 100%;box-sizing: border-box !important;overflow-wrap: break-word !important;"><span class="js_jump_icon h5_image_link" data-positionback="static" style="outline: 0px;max-width: 100%;line-height: 0;vertical-align: bottom;user-select: none;top: auto;left: auto;right: auto;bottom: auto;box-sizing: border-box !important;overflow-wrap: break-word !important;"><img class="rich_pages wxw-img" data-backh="156" data-backw="562" data-ratio="0.27734375" data-s="300,640" data-type="jpeg" data-w="1280" style="outline: 0px;border: 0px;width: 100%;box-sizing: border-box !important;overflow-wrap: break-word !important;visibility: visible !important;height: auto !important;" src="https://images.weserv.nl/?url=https://mmbiz.qpic.cn/mmbiz_jpg/boqKyJNBCy3Ep1sCOwDSY61lA6FrNS1CZbKF2Q3nicSjsr9n75YAexlOIhqYxicUc6GA6ibibBMlDtXyc88bIvn5xg/640?wx_fmt=jpeg"  /></span></a></p><section style="margin-right: 8px;margin-left: 8px;outline: 0px;max-width: 100%;box-sizing: border-box !important;overflow-wrap: break-word !important;"><br style="outline: 0px;max-width: 100%;box-sizing: border-box !important;overflow-wrap: break-word !important;"  /></section><p style="outline: 0px;max-width: 100%;box-sizing: border-box !important;overflow-wrap: break-word !important;"><a target="_blank" href="http://mp.weixin.qq.com/s?__biz=MzA4NTU2MTg3MQ==&amp;mid=2655207211&amp;idx=1&amp;sn=0d9e8de5babba19fc6f92a8e0a12e57e&amp;chksm=8461984bb316115d000d15c82d8f47f7352784f5840be62c2da82a3f0dcab1919eda8379c15e&amp;scene=21#wechat_redirect" textvalue="‍‍" linktype="text" imgurl="" imgdata="null" data-itemshowtype="0" tab="innerlink" data-linktype="1" wah-hotarea="click" hasload="1" style="outline: 0px;-webkit-tap-highlight-color: rgba(0, 0, 0, 0);cursor: pointer;max-width: 100%;box-sizing: border-box !important;overflow-wrap: break-word !important;"><span class="js_jump_icon h5_image_link" data-positionback="static" style="outline: 0px;max-width: 100%;line-height: 0;vertical-align: bottom;user-select: none;top: auto;left: auto;right: auto;bottom: auto;box-sizing: border-box !important;overflow-wrap: break-word !important;"><img class="rich_pages wxw-img" data-backh="156" data-backw="562" data-cropselx1="0" data-cropselx2="562" data-cropsely1="0" data-cropsely2="156" data-ratio="0.2777777777777778" data-s="300,640" data-type="png" data-w="1800" style="outline: 0px;border: 0px;letter-spacing: 0.544px;width: 100%;box-sizing: border-box !important;overflow-wrap: break-word !important;visibility: visible !important;height: auto !important;" src="https://images.weserv.nl/?url=https://mmbiz.qpic.cn/mmbiz_png/boqKyJNBCy3eQ1EFINgcpGwWheCPFlLiaveDuIDOSIiajxtgUsGLLtflhVnxWPnrBFafe8wmlQxxAzrWl1X8R1bg/640?wx_fmt=png"  /></span></a></p><section style="margin-right: 8px;margin-left: 8px;outline: 0px;max-width: 100%;box-sizing: border-box !important;overflow-wrap: break-word !important;"><br style="outline: 0px;max-width: 100%;box-sizing: border-box !important;overflow-wrap: break-word !important;"  /></section><p style="outline: 0px;max-width: 100%;box-sizing: border-box !important;overflow-wrap: break-word !important;"><a target="_blank" href="http://mp.weixin.qq.com/s?__biz=MzA4NTU2MTg3MQ==&amp;mid=2655204298&amp;idx=1&amp;sn=860a3e37b4b2e7beffebcaf773a491b7&amp;chksm=846194aab3161dbc597edae18cf8067311f3cdd7cc8ad779f15fa4aff249befa712871af1619&amp;scene=21#wechat_redirect" textvalue="你已选中了添加链接的内容" linktype="text" imgurl="" imgdata="null" data-itemshowtype="0" tab="innerlink" data-linktype="1" wah-hotarea="click" hasload="1" style="outline: 0px;-webkit-tap-highlight-color: rgba(0, 0, 0, 0);cursor: pointer;max-width: 100%;box-sizing: border-box !important;overflow-wrap: break-word !important;"><span class="js_jump_icon h5_image_link" data-positionback="static" style="outline: 0px;max-width: 100%;line-height: 0;vertical-align: bottom;user-select: none;top: auto;left: auto;right: auto;bottom: auto;box-sizing: border-box !important;overflow-wrap: break-word !important;"><img class="rich_pages wxw-img" data-backh="156" data-backw="562" data-ratio="0.27734375" data-s="300,640" data-type="jpeg" data-w="1280" style="outline: 0px;border: 0px;letter-spacing: 0.544px;width: 100%;box-sizing: border-box !important;overflow-wrap: break-word !important;visibility: visible !important;height: auto !important;" src="https://images.weserv.nl/?url=https://mmbiz.qpic.cn/mmbiz_jpg/boqKyJNBCy3Ep1sCOwDSY61lA6FrNS1CJ5MQicIfrQjCoscvicK5rZIdHwusaQKMz88ekyzTL36V3V2lC5cgWn0A/640?wx_fmt=jpeg"  /></span></a></p><section style="outline: 0px;max-width: 100%;box-sizing: border-box;letter-spacing: 0.544px;overflow-wrap: break-word !important;"><section style="outline: 0px;max-width: 100%;box-sizing: border-box;font-size: 20px;background-image: url(&quot;https://mmbiz.qpic.cn/mmbiz_png/boqKyJNBCy2FUu5l5UvDiaiby1coCq6D9zdLqmiakjuCBYibcbxrX62dh8Nicd0p5DgGBicjNuhfofMdOic2t06hP3jlQ/640?wx_fmt=png&quot;);background-repeat: no-repeat;background-attachment: initial;background-origin: initial;background-clip: initial;background-position: center 20px;background-size: 112px;overflow-wrap: break-word !important;"><span style="margin-top: 38px;margin-bottom: 10px;outline: 0px;max-width: 100%;line-height: 48px;color: rgb(234, 84, 41);border-bottom: 2px solid rgb(234, 84, 41);display: inline-block;box-sizing: border-box !important;overflow-wrap: break-word !important;">关于 TGO 鲲鹏会</span></section></section><p style="margin-bottom: 5px;padding-top: 20px;padding-right: 8px;padding-left: 8px;outline: 0px;max-width: 100%;box-sizing: border-box;letter-spacing: 0.544px;font-size: 16px;white-space: pre-line;line-height: 27px;color: rgb(15, 15, 15);text-align: left;overflow-wrap: break-word !important;"><span style="outline: 0px;max-width: 100%;box-sizing: border-box !important;overflow-wrap: break-word !important;">TGO 鲲鹏会是极客邦旗下科技领导者聚集和交流的组织，学员由 CTO、架构师、技术 VP、具有技术背景的 CEO 等组成，目前已经在北京、上海、深圳、广州、杭州、成都、硅谷、南京、台北、厦门、武汉、苏州等 12 个城市定期举办学习活动。</span></p><p style="margin-bottom: 5px;padding-top: 20px;padding-right: 8px;padding-left: 8px;outline: 0px;max-width: 100%;box-sizing: border-box;letter-spacing: 0.544px;font-size: 16px;white-space: pre-line;line-height: 27px;color: rgb(15, 15, 15);text-align: left;overflow-wrap: break-word !important;"><span style="outline: 0px;max-width: 100%;box-sizing: border-box !important;overflow-wrap: break-word !important;">TGO 鲲鹏会采用了“学员共建”的组织形式，希望通过“共建、自治”的方式维护各城市的健康发展，为学员提供必要的服务，帮助学员个人更好地学习和成长，助力学员企业之间更好地合作与交流。加入 TGO 鲲鹏会，全方位提升自身价值，成为卓越科技领导者！</span></p><p style="margin-top: 15px;margin-right: 8px;margin-left: 8px;outline: 0px;max-width: 100%;letter-spacing: 0.544px;box-sizing: border-box !important;overflow-wrap: break-word !important;"><img class="rich_pages wxw-img" data-backh="213" data-backw="546" data-fileid="507718725" data-galleryid="" data-ratio="0.39" data-s="300,640" data-type="png" data-w="900" style="outline: currentcolor none 0px;width: 100%;box-sizing: border-box !important;overflow-wrap: break-word !important;visibility: visible !important;height: auto !important;" src="https://images.weserv.nl/?url=https://mmbiz.qpic.cn/mmbiz_png/boqKyJNBCy1scCtMiacwSxBdqPVwZ7tAw2fLmKibolO3M46qvicTibtj52Vbg2do3fJ3YICdAYibCyDqJQySnzxzyQw/640?wx_fmt=png"  /></p><p style="outline: 0px;max-width: 100%;letter-spacing: 0.544px;box-sizing: border-box !important;overflow-wrap: break-word !important;"><br style="outline: 0px;max-width: 100%;box-sizing: border-box !important;overflow-wrap: break-word !important;"  /></p><p style="outline: 0px;max-width: 100%;letter-spacing: 0.544px;text-align: left;box-sizing: border-box !important;overflow-wrap: break-word !important;"><span style="outline: 0px;max-width: 100%;font-size: 15px;letter-spacing: 0.544px;white-space: pre-line;box-sizing: border-box !important;overflow-wrap: break-word !important;">点击阅读原文或扫码加入TGO鲲鹏会！</span></p></section></section>
+          </div>
+
+          <script type="text/javascript" nonce="1412121176" reportloaderror>
+            var first_sceen__time = (+new Date());
+            if ("" == 1 && document.getElementById('js_content')) {
+              document.getElementById('js_content').addEventListener("selectstart",function(e){ e.preventDefault(); });
+            }
+          </script>
+
+          
+<div id="js_sponsor_ad_area"></div>
+
+
+           
+                                
+                    
+        </div>
+                        <div id="js_tags_preview_toast" class="article-tag__error-tips" style="display: none;">预览时标签不可点</div>
+                
+        
+        <div id="js_album_keep_read" class="appmsg_card_context album_read_card" style="display: none;">
+          <div role="button" class="album_read_hd weui-flex" id="js_album_directory">
+            <div class="album_read_source">收录于话题 <span class="weui-link wx_tap_link js_album_directory__name">#<span id="js_album_keep_read_title"></span></span></div>
+            <span class="weui-btn__word-wrp wx_tap_link js_album_directory__size">&nbsp;<span id="js_album_keep_read_size"></span><span class="weui-hidden_abs">个</span></span>
+          </div>
+          <div class="album_read_bd weui-flex">
+            <span role="button" class="album_read_nav_item album_read_nav_prev weui-flex__item wx_tap_link js_wx_tap_highlight" id="js_album_prev">
+              <span class="album_read_nav_inner">
+                <span class="album_read_nav_btn">上一篇</span>
+                <span class="album_read_nav_title">
+                  <span class="album_read_nav_title_inner" id="js_album_keep_read_pre_title"></span>
+                </span>
+              </span>
+            </span>
+            <span role="button" class="album_read_nav_item album_read_nav_next weui-flex__item wx_tap_link js_wx_tap_highlight" id="js_album_next">
+              <span class="album_read_nav_inner">
+                <span class="album_read_nav_btn">下一篇</span>
+                <span class="album_read_nav_title">
+                  <span class="album_read_nav_title_inner" id="js_album_keep_read_next_title"></span>
+                </span>
+              </span>
+            </span>
+          </div>
+        </div>
+
+        
+
+        
+        <div id="content_bottom_area" class="rich_media_tool_area"></div>
+
+                <div class="rich_media_tool" id="js_sg_bar">
+                    <a class="media_tool_meta meta_primary"  href="https://tgo.infoq.cn/join" target="_blank">阅读原文</a>
+                  </div>
+              </div>
+    </div>
+
+    <div class="rich_media_area_primary sougou" id="sg_tj" style="display:none"></div>
+
+    
+    <div class="rich_media_area_extra">
+      <div class="rich_media_area_extra_inner">
+        
+        <div class="wx_follow_container" id="js_like_profile_container"></div>
+        
+        <div class="related_container" id="js_related_container"></div>
+        
+        <div id="page_bottom_area"></div>
+      </div>
+    </div>
+
+    
+    <div id="js_pc_qr_code" class="qr_code_pc_outer" style="display:none;">
+      <div class="qr_code_pc_inner">
+        <div class="qr_code_pc">
+          <img id="js_pc_qr_code_img" class="qr_code_pc_img">
+          <p>微信扫一扫<br>关注该公众号</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<div class="comment_primary_emotion_panel_wrp" id="js_emotion_panel_pc" style="display: none">
+  <div class="comment_primary_emotion_panel">
+    <ul class="comment_primary_emotion_list_pc" id="js_emotion_list_pc">
+    </ul>
+  </div>
+</div>
+
+
+<div class="weui-dialog__wrp" id="js_alert_panel" style="display:none;">
+  <div class="weui-mask"></div>
+  <div class="weui-dialog">
+    <div class="weui-dialog__bd" id="js_alert_content"></div>
+    <div class="weui-dialog__ft">
+      <a href="javascript:;" class="weui-dialog__btn weui-dialog__btn_default" id="js_alert_confirm">知道了</a>
+    </div>
+  </div>
+</div>
+
+
+<script type="text/javascript" nonce="1412121176" reportloaderror>
+  window.img_popup = 1; // 全量小程序弹窗
+</script>
+
+
+<div id="js_pc_weapp_code" class="weui-desktop-popover weui-desktop-popover_pos-up-center weui-desktop-popover_img-text" style="display: none;">
+  <div class="weui-desktop-popover__content">
+      <div class="weui-desktop-popover__desc">
+          <img id="js_pc_weapp_code_img">
+          微信扫一扫<br>使用小程序<span id="js_pc_weapp_code_des"></span>
+      </div>
+  </div>
+</div>
+<div id="js_minipro_dialog" role="dialog" aria-modal="true" tabindex="0" aria-labelledby="js_minipro_dialog_head" style="display:none;">
+  <div class="weui-mask"></div>
+  <div class="weui-dialog weui-dialog_link">
+      <div class="weui-dialog__hd">
+          <strong class="weui-dialog__title" id="js_minipro_dialog_head" tabindex="0"></strong>
+      </div>
+      <div class="weui-dialog__bd" id="js_minipro_dialog_body"></div>
+      
+      <div class="weui-dialog__ft">
+          <a role="button" id="js_minipro_dialog_cancel" href="javascript:void(0);" class="weui-dialog__btn weui-dialog__btn_default">取消</a>
+          <a role="button" id="js_minipro_dialog_ok" href="javascript:void(0);" class="weui-dialog__btn weui-dialog__btn_primary">允许</a>
+      </div>
+  </div>
+</div>
+<div id="js_link_dialog" role="dialog" aria-modal="true" tabindex="0" aria-labelledby="js_link_dialog_body" style="display:none;">
+  <div class="weui-mask"></div>
+  <div class="weui-dialog weui-dialog_link">
+    <div class="weui-dialog__hd">
+      <strong class="weui-dialog__title" id="js_link_dialog_head" tabindex="0"></strong>
+    </div>
+    <div class="weui-dialog__bd" id="js_link_dialog_body" tabindex="0"></div>
+    
+    <div class="weui-dialog__ft">
+      <a role="button" id="js_link_dialog_cancel" href="javascript:void(0);" class="weui-dialog__btn weui-dialog__btn_default">取消</a>
+      <a role="button" id="js_link_dialog_ok" href="javascript:void(0);" class="weui-dialog__btn weui-dialog__btn_primary">允许</a>
+    </div>
+  </div>
+</div>
+
+
+
+    <script type="text/javascript" nonce="1412121176" reportloaderror>
+window.logs.pagetime.page_begin = Date.now();
+</script>
+    <script type="text/javascript" nonce="1412121176" reportloaderror>
+var __DEBUGINFO = {
+  debug_js: "//res.wx.qq.com/mmbizwap/zh_CN/htmledition/js/biz_wap/debug/console5cbc33.js",
+  safe_js: "//res.wx.qq.com/mmbizwap/zh_CN/htmledition/js/biz_wap/safe/moonsafe5cbc33.js",
+  res_list: []
+};
+</script>
+
+<script type="text/javascript" nonce="1412121176" reportloaderror>
+(function () {
+  var totalCount = 0,
+    finishCount = 0;
+
+  function _loadVConsolePlugin() {
+    window.vConsole = new window.VConsole();
+    while (window.vConsolePlugins.length > 0) {
+      var p = window.vConsolePlugins.shift();
+      window.vConsole.addPlugin(p);
+    }
+    // 视频落地页h5有时候不会触发onload事件，导致vConsole无法渲染，这里手动强制渲染vConsole @baakqiu
+    if (!window.vConsole.isInited) {
+      window.vConsole._render();
+      window.vConsole._mockTap();
+      window.vConsole._bindEvent();
+      window.vConsole._autoRun();
+    }
+  }
+
+  function _addVConsole(uri, cb) {
+    totalCount++;
+    var node = document.createElement('SCRIPT');
+    node.type = 'text/javascript';
+    node.src = uri;
+    node.setAttribute('nonce', '1412121176');
+    if (cb) {
+      node.onload = cb;
+    }
+    document.getElementsByTagName('head')[0].appendChild(node);
+  }
+  if (
+    (document.cookie && document.cookie.indexOf('vconsole_open=1') > -1)
+    || location.href.indexOf('vconsole=1') > -1
+  ) {
+    window.vConsolePlugins = [];
+    _addVConsole('//res.wx.qq.com/mmbizwap/zh_CN/htmledition/js/vconsole/3.2.2/vconsole.min5cbc32.js', function () {
+      // _addVConsole('plugin/vconsole-sources/1.0.1/vconsole-sources.min.js');
+      _addVConsole('//res.wx.qq.com/mmbizwap/zh_CN/htmledition/js/vconsole/plugin/vconsole-mpopt/1.0.1/vconsole-mpopt5cbc32.js', _loadVConsolePlugin);
+    });
+  }
+
+  // // 广告iframe预加载
+  try {
+    var adIframeUrl = localStorage.getItem('__WXLS_ad_iframe_url');
+    if (window === top) {
+      if (adIframeUrl) {
+        if (navigator.userAgent.indexOf('iPhone') > -1) {
+          var img = new Image();
+          img.src = adIframeUrl;
+        } else {
+          var link = document.createElement('link');
+          link.rel = 'prefetch';
+          link.href = adIframeUrl;
+          document.getElementsByTagName('head')[0].appendChild(link);
+        }
+      }
+    }
+  } catch (err) {
+
+  }
+
+})();
+</script>
+    
+    <script type="text/javascript" nonce="1412121176" reportloaderror>!function(){"use strict";var e=function(e,t,n,i){var o=new Date(1e3*(1*t)),c=function(e){return"0".concat(e).slice(-2)},u=o.getFullYear()+"-"+c(o.getMonth()+1)+"-"+c(o.getDate())+" "+c(o.getHours())+":"+c(o.getMinutes());i&&(i.innerText=u)};if(!window.__second_open__){e(0,"1648813859",0,document.getElementById("publish_time")),window.__setPubTime=e}}();</script>
+<script type="text/javascript" nonce="1412121176" reportloaderror>
+//兼容 IE
+if (!window.console) window.console = { log: function() {} };
+// 图片占位 @ekili
+if (typeof getComputedStyle == 'undefined') {
+  if (document.body.currentStyle) {
+    window.getComputedStyle = function(el) {
+      return el.currentStyle;
+    }
+  } else {
+    window.getComputedStyle = {};
+  }
+}
+// 图片和视频预加载逻辑，记得H5和秒开要对齐逻辑
+(function(){
+  window.__zoom = 1;
+
+  var ua = navigator.userAgent.toLowerCase();
+  var re = new RegExp("msie ([0-9]+[\.0-9]*)");
+  var version;
+  if (re.exec(ua) != null) {
+    version = parseInt(RegExp.$1);
+  }
+  var isIE = false;
+  if (typeof version != 'undefined' && version >= 6 && version <= 9) {
+    isIE = true;
+  }
+  var bodyWidth = '' * 1;
+  if (bodyWidth) {
+    var styles = getComputedStyle(document.getElementById('page-content'));
+    bodyWidth - parseFloat(styles.paddingLeft) - parseFloat(styles.paddingRight);
+  }
+  var getMaxWith = function () {
+    var container = document.getElementById('img-content');
+    var max_width = container.offsetWidth;
+    !max_width && bodyWidth && (max_width = bodyWidth);
+    var container_padding = 0;
+    var container_style = getComputedStyle(container);
+    container_padding = parseFloat(container_style.paddingLeft) + parseFloat(container_style.paddingRight);
+    max_width -= container_padding;
+    if (!max_width) {
+      max_width = window.innerWidth - 30;      //防止offsetTop不可用，30为padding
+    }
+    return max_width;
+  };
+  var getParentWidth = function (dom) {
+    var parent_width = 0;
+    var parent = dom.parentNode;
+    var outerWidth = 0;
+    while (true) {
+      if (!parent || parent.nodeType != 1) break;
+      var parent_style = getComputedStyle(parent);
+      if (!parent_style) break;
+      parent_width = parent.clientWidth - parseFloat(parent_style.paddingLeft) - parseFloat(parent_style.paddingRight) - outerWidth;
+      if (parent_width > 0) break;
+      outerWidth += parseFloat(parent_style.paddingLeft) + parseFloat(parent_style.paddingRight) + parseFloat(parent_style.marginLeft) + parseFloat(parent_style.marginRight) + parseFloat(parent_style.borderLeftWidth) + parseFloat(parent_style.borderRightWidth);
+      parent = parent.parentNode;
+    }
+    return parent_width;
+  }
+  var getOuterW = function (dom) {
+    var style = getComputedStyle(dom),
+      w = 0;
+    if (!!style) {
+      w = parseFloat(style.paddingLeft) + parseFloat(style.paddingRight) + parseFloat(style.borderLeftWidth) + parseFloat(style.borderRightWidth);
+    }
+    return w;
+  };
+  var getOuterH = function (dom) {
+    var style = getComputedStyle(dom),
+      h = 0;
+    if (!!style) {
+      h = parseFloat(style.paddingTop) + parseFloat(style.paddingBottom) + parseFloat(style.borderTopWidth) + parseFloat(style.borderBottomWidth);
+    }
+    return h;
+  };
+  var insertAfter = function (dom, afterDom) {
+    var _p = afterDom.parentNode;
+    if (!_p) {
+      return;
+    }
+    if (_p.lastChild === afterDom) {
+      _p.appendChild(dom);
+    } else {
+      _p.insertBefore(dom, afterDom.nextSibling);
+    }
+  };
+  var getQuery = function (name, url) {
+    //参数：变量名，url为空则表从当前页面的url中取
+    var u = arguments[1] || window.location.search,
+      reg = new RegExp("(^|&)" + name + "=([^&]*)(&|$)"),
+      r = u.substr(u.indexOf("\?") + 1).match(reg);
+    return r != null ? r[2] : "";
+  };
+
+  /**
+    * 设置图片size
+    *
+    * @param {HTMLElement} item             图片元素
+    * @param {number} widthNum         宽度数值
+    * @param {string} widthUnit        宽度单位
+    * @param {number} ratio            宽高比
+    * @param {boolean} breakParentWidth 是否突破父元素宽度(父元素是否被撑大)
+    */
+  function setImgSize(item, widthNum, widthUnit, ratio, breakParentWidth) {
+    setTimeout(function () {
+      var img_padding_border = getOuterW(item) || 0;
+      var img_padding_border_top_bottom = getOuterH(item) || 0;
+
+      var isAccessibilityKey = 'isMpUserAccessibility';
+      var isAccessMode = window.localStorage.getItem(isAccessibilityKey);
+
+      // 如果设置的宽度超过了父元素最大宽度，则取父元素宽度
+      if (widthNum > getParentWidth(item) && !breakParentWidth) {
+        widthNum = getParentWidth(item);
+      }
+
+      height = (widthNum - img_padding_border) * ratio + img_padding_border_top_bottom;
+
+      if (isIE || '0' === '1' || '' === '1' || isAccessMode === '1') { // 判一下是不是漫画原创，如果是，不走懒加载
+        var url = item.getAttribute('data-src');
+        item.src = url;
+      } else {
+        if (parseFloat(widthNum, 10) > 40 && height > 40 && breakParentWidth) {
+          item.className += ' img_loading';
+        }
+        item.src = "data:image/gif;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQImWNgYGBgAAAABQABh6FO1AAAAABJRU5ErkJggg==";
+        widthNum !== 'auto' && (item.style.cssText += ";width: " + widthNum + widthUnit + " !important;");
+        widthNum !== 'auto' && (item.style.cssText += ";height: " + height + widthUnit + " !important;");
+      }
+    }, 10);
+  }
+  // 图片和视频预加载逻辑，记得H5和秒开要对齐逻辑
+  (function () {
+    var images = document.getElementsByTagName('img');
+    var length = images.length;
+    var max_width = getMaxWith();
+    for (var i = 0; i < length; ++i) {
+      if (window.__second_open__ && images[i].getAttribute('__sec_open_place_holder__')) {
+        continue;
+      }
+      var imageItem = images[i];
+      var src_ = imageItem.getAttribute('data-src');
+      var realSrc = imageItem.getAttribute('src');
+      if (!src_ || realSrc) continue;
+      // 图片原始宽度
+      var originWidth = imageItem.getAttribute('data-w');
+      var ratio_ = 1 * imageItem.getAttribute('data-ratio');
+
+      var height = 100;
+      if (ratio_ && ratio_ > 0) {
+        var parent_width = getParentWidth(imageItem) || max_width;
+        var initWidth = imageItem.style.width || imageItem.getAttribute('width') || originWidth || parent_width;
+        initWidth = parseFloat(initWidth, 10) > max_width ? max_width : initWidth;
+        // 有attribute或style中的width，写入_width属性，在图片加载完成时写入img标签
+        if (initWidth) {
+          imageItem.setAttribute('_width', !isNaN(initWidth * 1) ? initWidth + 'px' : initWidth);
+        }
+        // 使用百分比，则计算出像素宽度
+        if (typeof initWidth === 'string' && initWidth.indexOf('%') !== -1) {
+          initWidth = parseFloat(initWidth.replace('%', ''), 10) / 100 * parent_width;
+        }
+        // 使用auto，就是原始宽度
+        if (initWidth === 'auto') {
+          initWidth = originWidth;
+        }
+
+        var widthNum;
+        var widthUnit;
+        if (initWidth === 'auto') {
+          widthNum = 'auto';
+        } else {
+          var res = /^(\d+(?:\.\d+)?)([a-zA-Z%]+)?$/.exec(initWidth);
+          widthNum = res && res.length >= 2 ? res[1] : 0;
+          widthUnit = res && res.length >= 3 && res[2] ? res[2] : 'px';
+        }
+
+        // 试探一下parent宽度在设置了图片的大小之后是否会变化
+        setImgSize(imageItem, widthNum, widthUnit, ratio_, true);
+        // 真正设置宽高
+        (function (item, widthNumber, unit, ratio) {
+          setTimeout(function () {
+            setImgSize(item, widthNumber, unit, ratio, false);
+          });
+        })(imageItem, widthNum, widthUnit, ratio_);
+      } else {
+        imageItem.style.cssText += ";visibility: hidden !important;";
+      }
+  }
+  })();
+  window.__videoDefaultRatio = 16 / 9;//默认值是16/9
+  window.__getVideoWh = function (dom) {
+    var max_width = getMaxWith(),
+      width = max_width,
+      ratio_ = dom.getAttribute('data-ratio') * 1,//mark16/9
+      arr = [4 / 3, 16 / 9],
+      ret = arr[0],
+      abs = Math.abs(ret - ratio_);
+    if (!ratio_) { // 没有比例
+      if (dom.getAttribute("data-mpvid")) { // MP视频
+        ratio_ = 16 / 9;
+      } else { // 非MP视频，需要兼容历史图文
+        ratio_ = 4 / 3;
+      }
+    } else { // 有比例，则判断更接近4/3还是更接近16/9
+      for (var j = 1, jl = arr.length; j < jl; j++) {
+        var _abs = Math.abs(arr[j] - ratio_);
+        if (_abs < abs) {
+          abs = _abs;
+          ret = arr[j];
+        }
+      }
+      ratio_ = ret;
+    }
+
+    var parent_width = getParentWidth(dom) || max_width,
+      width = width > parent_width ? parent_width : width,
+      outerW = getOuterW(dom) || 0,
+      outerH = getOuterH(dom) || 0,
+      videoW = width - outerW,
+      videoH = videoW / ratio_,
+      speedDotH = 12, // 播放器新样式的进度条在最下面，为了避免遮住拖动的点点，需要额外设置高一些
+      height = videoH + outerH + speedDotH;
+
+    return { w: Math.ceil(width), h: Math.ceil(height), vh: videoH, vw: videoW, ratio: ratio_, sdh: speedDotH };
+  };
+
+  // 图片和视频预加载逻辑，记得H5和秒开要对齐逻辑
+  (function () {
+    var iframe = document.getElementsByTagName('iframe');
+    for (var i = 0, il = iframe.length; i < il; i++) {
+      if (window.__second_open__ && iframe[i].getAttribute('__sec_open_place_holder__')) {
+        continue;
+      }
+      var a = iframe[i];
+      var src_ = a.getAttribute('src') || a.getAttribute('data-src') || "";
+
+      if (!/^http(s)*\:\/\/v\.qq\.com\/iframe\/(preview|player)\.html\?/.test(src_)
+        && !/^http(s)*\:\/\/mp\.weixin\.qq\.com\/mp\/readtemplate\?t=pages\/video_player_tmpl/.test(src_)
+      ) {
+        continue;
+      }
+      var vid = getQuery("vid", src_);
+      if (!vid) {
+        continue;
+      }
+      vid = vid.replace(/^[\s\uFEFF\xA0]+|[\s\uFEFF\xA0]+$/g, "");//清除前后空格
+      a.removeAttribute('src');
+      a.style.display = "none";
+      var obj = window.__getVideoWh(a),
+        videoPlaceHolderSpan = document.createElement('span'),
+        videoPlayerIconSpan = document.createElement('span'),
+        mydiv = document.createElement('img');
+
+      videoPlaceHolderSpan.className = "js_img_loading db";
+      videoPlaceHolderSpan.setAttribute("data-vid", vid);
+      // videoPlaceHolderSpan.style.display = 'block';
+
+      videoPlayerIconSpan.className = 'wx_video_context db'; // 预加载的视频封面图占位
+      videoPlayerIconSpan.style.display = 'none';
+      videoPlayerIconSpan.innerHTML = '<span class="wx_video_thumb_primary"></span><button class="wx_video_play_btn">播放</button><span class="wx_video_mask"></span>'; // 曝光后设置这里img的src
+
+      mydiv.className = "img_loading";
+
+      mydiv.src = "data:image/gif;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQImWNgYGBgAAAABQABh6FO1AAAAABJRU5ErkJggg==";
+      // mydiv.style.cssText += ';height:100%;width:100%;';
+      // mydiv.setAttribute("data-vid",vid);
+      videoPlaceHolderSpan.style.cssText = "width: " + obj.w + "px !important;";
+      mydiv.style.cssText += ";width: " + obj.w + "px";
+      videoPlaceHolderSpan.appendChild(videoPlayerIconSpan);
+      videoPlaceHolderSpan.appendChild(mydiv);
+
+      insertAfter(videoPlaceHolderSpan, a); // 在视频后面插入占位
+
+      /* var parentNode = a.parentNode;
+      var copyIframe = a;
+      var index = i; */
+
+      // 由于视频需要加一个转载的来源，所以这里需要提前设置高度
+      function ajax(obj) {
+        var url = obj.url;
+        var xhr = new XMLHttpRequest();
+
+        var data = null;
+        if (typeof obj.data == "object") {
+          var d = obj.data;
+          data = [];
+          for (var k in d) {
+            if (d.hasOwnProperty(k)) {
+              data.push(k + "=" + encodeURIComponent(d[k]));
+            }
+          }
+          data = data.join("&");
+        } else {
+          data = typeof obj.data == 'string' ? obj.data : null;
+        }
+
+        xhr.open('POST', url, true);
+        xhr.onreadystatechange = function () {
+          if (xhr.readyState == 4) {
+            if (xhr.status >= 200 && xhr.status < 400) {
+              obj.success && obj.success(xhr.responseText);
+            } else {
+              obj.error && obj.error(xhr);
+            }
+            obj.complete && obj.complete();
+            obj.complete = null;
+          }
+        };
+        xhr.setRequestHeader("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8");
+        xhr.setRequestHeader("X-Requested-With", "XMLHttpRequest");
+        xhr.send(data);
+      }
+
+      var mid = "" || "" || "2655207886";
+      var biz = "" || "MzA4NTU2MTg3MQ==";
+      var sessionid = "" || "svr_f5b439d0780";
+      var idx = "";
+
+      (function sendReq(parentNode, copyIframe, index, vid) {
+        ajax({
+          url: '/mp/videoplayer?vid=' + vid + '&mid=' + mid + '&idx=1&__biz=' + biz + '&sessionid=' + sessionid + '&f=json',
+          type: "GET",
+          dataType: 'json',
+          success: function (json) {
+            var ret = JSON.parse(json || '{}');
+            var ori = ret.ori_status;
+            var hit_biz_headimg = ret.hit_biz_headimg + '/64';
+            var hit_nickname = ret.hit_nickname;
+            var hit_username = ret.hit_username;
+            var sourceBiz = ret.source_encode_biz;
+
+            var selfUserName = "gh_4c81692e80ba";
+
+            if (ori === 2 && selfUserName !== hit_username) {
+              var videoBar = document.createElement('div');
+              var videoBarHtml = '<div class="wx-edui-video_source_link js_wx_tap_highlight wx_tap_card" id="' + (hit_username + index) + '" data-hit-username="' + hit_username + '" data-hit-biz="' + sourceBiz + '">';
+              videoBarHtml += '<div class="wx-edui-video_source_word">以下视频来源于</div>';
+              videoBarHtml += '<div class="wx-edui-video_account_info">';
+              videoBarHtml += '<div class="wx-edui-video_account_avatar" id="' + (hit_biz_headimg + index) + '" src="https://images.weserv.nl/?url=' + hit_biz_headimg + '"></div>';
+              videoBarHtml += '<div class="wx-edui-video_account_name">' + hit_nickname + '</div>';
+              videoBarHtml += '<i class="wx-edui-video_account_arrow"></i>';
+              videoBarHtml += '</div>';
+              videoBarHtml += '<div class="wx-edui-video_source_link__layer_mask"></div>';
+              videoBarHtml += '</div>';
+              videoBar.innerHTML = videoBarHtml;
+              var spanContainer = document.getElementById('js_mp_video_container_' + index);
+              if (spanContainer) {
+                spanContainer.parentNode.insertBefore(videoBar, spanContainer);
+              } else if (parentNode.contains && parentNode.contains(copyIframe)) {
+                parentNode.insertBefore(videoBar, copyIframe);
+              } else {
+                parentNode.insertBefore(videoBar, parentNode.firstElementChild);
+              }
+              var avatorEle = document.getElementById(hit_biz_headimg + index);
+              var avatorSrc = avatorEle.dataset.src;
+              console.log('avatorSrc' + avatorSrc);
+              if (ret.hit_biz_headimg) {
+                avatorEle.style.backgroundImage = 'url(' + avatorSrc + ')';
+              }
+            }
+          },
+          error: function (xhr) {
+          }
+        });
+      })(a.parentNode, a, i, vid);
+
+      a.style.cssText += ";width: " + obj.w + "px !important;";
+      a.setAttribute("width", obj.w);
+      if (window.__zoom != 1) {
+        a.style.display = "block";
+        videoPlaceHolderSpan.style.display = "none";
+        a.setAttribute("_ratio", obj.ratio);
+        a.setAttribute("_vid", vid);
+      } else {
+        videoPlaceHolderSpan.style.cssText += "height: " + obj.h + "px !important;";
+        mydiv.style.cssText += "height: " + obj.h + "px !important;";
+        a.style.cssText += "height: " + obj.h + "px !important;";
+        a.setAttribute("height", obj.h);
+      }
+      a.setAttribute("data-vh", obj.vh);
+      a.setAttribute("data-vw", obj.vw);
+      if (a.getAttribute("data-mpvid")) {
+        a.setAttribute("data-src", location.protocol + "//mp.weixin.qq.com/mp/readtemplate?t=pages/video_player_tmpl&auto=0&vid=" + vid);
+      } else {
+        a.setAttribute("data-src", location.protocol + "//v.qq.com/iframe/player.html?vid=" + vid + "&width=" + obj.vw + "&height=" + obj.vh + "&auto=0");
+      }
+    }
+  })();
+
+  (function () {
+    if (window.__zoom != 1) {
+      if (!window.__second_open__) {
+        document.getElementById('page-content').style.zoom = window.__zoom;
+        var a = document.getElementById('activity-name');
+        var b = document.getElementById('meta_content');
+        if (!!a) {
+          a.style.zoom = 1 / window.__zoom;
+        }
+        if (!!b) {
+          b.style.zoom = 1 / window.__zoom;
+        }
+      }
+      var images = document.getElementsByTagName('img');
+      for (var i = 0, il = images.length; i < il; i++) {
+        if (window.__second_open__ && images[i].getAttribute('__sec_open_place_holder__')) {
+          continue;
+        }
+        images[i].style.zoom = 1 / window.__zoom;
+      }
+      var iframe = document.getElementsByTagName('iframe');
+      for (var i = 0, il = iframe.length; i < il; i++) {
+        if (window.__second_open__ && iframe[i].getAttribute('__sec_open_place_holder__')) {
+          continue;
+        }
+        var a = iframe[i];
+        a.style.zoom = 1 / window.__zoom;
+        var src_ = a.getAttribute('data-src') || "";
+        if (!/^http(s)*\:\/\/v\.qq\.com\/iframe\/(preview|player)\.html\?/.test(src_)
+          && !/^http(s)*\:\/\/mp\.weixin\.qq\.com\/mp\/readtemplate\?t=pages\/video_player_tmpl/.test(src_)
+        ) {
+          continue;
+        }
+        var ratio = a.getAttribute("_ratio");
+        var vid = a.getAttribute("_vid");
+        a.removeAttribute("_ratio");
+        a.removeAttribute("_vid");
+        var vw = a.offsetWidth - (getOuterW(a) || 0);
+        var vh = vw / ratio;
+        var h = vh + (getOuterH(a) || 0)
+        a.style.cssText += "height: " + h + "px !important;"
+        a.setAttribute("height", h);
+        if (/^http(s)*\:\/\/v\.qq\.com\/iframe\/(preview|player)\.html\?/.test(src_)) {
+          a.setAttribute("data-src", location.protocol + "//v.qq.com/iframe/player.html?vid=" + vid + "&width=" + vw + "&height=" + vh + "&auto=0");
+        }
+        a.style.display = "none";
+        var parent = a.parentNode;
+        if (!parent) {
+          continue;
+        }
+        for (var j = 0, jl = parent.children.length; j < jl; j++) {
+          var child = parent.children[j];
+          if (child.className.indexOf("img_loading") >= 0 && child.getAttribute("data-vid") == vid) {
+            child.style.cssText += "height: " + h + "px !important;";
+            child.style.display = "";
+          }
+        }
+      }
+    }
+  })();
+})();
+</script><script type="text/javascript" nonce="1412121176" reportloaderror>!function(){"use strict";var t;t={defaultContentTpl:'<span class="js_img_loading db" style="width:#width#px !important;height:#height#px !important;text-indent: 0"><img style="width:#width#px !important;height:#height#px !important;" class="img_loading" src="data:image/gif;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQImWNgYGBgAAAABQABh6FO1AAAAABJRU5ErkJggg=="></span>',config:[{querySelector:"redpacketcover",genId:function(){var t=arguments.length>0&&void 0!==arguments[0]?arguments[0]:{};return decodeURIComponent(t.node.getAttribute("data-coveruri")||"")},calW:function(){var t=arguments.length>0&&void 0!==arguments[0]?arguments[0]:{};return.7854*t.parentWidth},calH:function(){var t=arguments.length>0&&void 0!==arguments[0]?arguments[0]:{};return this.calW({parentWidth:t.parentWidth})/.73346+27+37},replaceContentCssText:"",appendContentCssText:"display: inline-block;position: relative;",outerContainerLeft:'<section style="display:block;font-size:0;text-align:center;margin:16px 0;">',outerContainerRight:"</section>"},{querySelector:"qqmusic",genId:function(){var t=arguments.length>0&&void 0!==arguments[0]?arguments[0]:{};return(t.node.getAttribute("musicid")||"").replace(/^\s/,"").replace(/\s$/,"")+"_"+t.index},calW:function(){var t=arguments.length>0&&void 0!==arguments[0]?arguments[0]:{};return 1*t.parentWidth},calH:function(){return 88},replaceContentCssText:"",appendContentCssText:"margin:16px 0;diplay:block;",outerContainerLeft:"",outerContainerRight:""},{querySelector:"mpvoice",genId:function(){var t=arguments.length>0&&void 0!==arguments[0]?arguments[0]:{},e=decodeURIComponent(t.node.getAttribute("voice_encode_fileid")||"").replace(/^\s/,"").replace(/\s$/,"");return e+"_"+t.index},calW:function(){var t=arguments.length>0&&void 0!==arguments[0]?arguments[0]:{};return 1*t.parentWidth},calH:function(){return 122},replaceContentCssText:"",appendContentCssText:"margin:16px 0;diplay:block;",outerContainerLeft:"",outerContainerRight:""},{querySelector:"mppoi",genId:function(){var t=arguments.length>0&&void 0!==arguments[0]?arguments[0]:{};return t.node.getAttribute("data-id")||""},calW:function(){var t=arguments.length>0&&void 0!==arguments[0]?arguments[0]:{};return 1*t.parentWidth},calH:function(){return 219},replaceContentCssText:"",appendContentCssText:"margin:16px 0;diplay:block;",outerContainerLeft:"",outerContainerRight:""},{querySelector:"mpsearch",genId:function(){return decodeURIComponent("mpsearch")},calW:function(){var t=arguments.length>0&&void 0!==arguments[0]?arguments[0]:{};return 1*t.parentWidth},calH:function(){return 100},replaceContentCssText:"",appendContentCssText:"margin:16px 0;diplay:block;",outerContainerLeft:"",outerContainerRight:""},{querySelector:"mpvideosnap",genId:function(){var t=arguments.length>0&&void 0!==arguments[0]?arguments[0]:{},e=t.node.getAttribute("data-type")||"video";return"live"===e?decodeURIComponent(t.node.getAttribute("data-noticeid")||""):decodeURIComponent(t.node.getAttribute("data-id")||"")},calW:function(){var t=arguments.length>0&&void 0!==arguments[0]?arguments[0]:{},e=t.node.getAttribute("data-type")||"video";return"live"===e||"topic"===e?t.parentWidth:.665*t.parentWidth},calH:function(){var t=arguments.length>0&&void 0!==arguments[0]?arguments[0]:{},e=t.node.getAttribute("data-desc")||"",n=t.node.getAttribute("data-type")||"video";return"live"===n?113:"topic"===n?143:e?this.calW(t)+44+35+27:this.calW(t)+44+35},replaceContentCssText:"",appendContentCssText:"margin:16px auto;diplay:block;",outerContainerLeft:"",outerContainerRight:""},{querySelector:"mp-wxaproduct",genId:function(){var t=arguments.length>0&&void 0!==arguments[0]?arguments[0]:{};return decodeURIComponent(t.node.getAttribute("data-wxaproduct-productid")||"")},calW:function(){var t=arguments.length>0&&void 0!==arguments[0]?arguments[0]:{};return 1*t.parentWidth},calH:function(){var t=arguments.length>0&&void 0!==arguments[0]?arguments[0]:{},e=t.node.getAttribute("data-wxaproduct-cardtype")||"";return"mini"===e?124:466},replaceContentCssText:"",appendContentCssText:"margin:16px 0;diplay:block;",outerContainerLeft:"",outerContainerRight:""},{querySelector:"mpprofile",genId:function(t){return t.node.getAttribute("data-id")||""},calW:function(){var t=arguments.length>0&&void 0!==arguments[0]?arguments[0]:{};return 1*t.parentWidth},calH:function(){return 141},replaceContentCssText:"",appendContentCssText:"margin:28px 0 20px;diplay:block;",outerContainerLeft:"",outerContainerRight:""}]},function(){var t=arguments.length>0&&void 0!==arguments[0]?arguments[0]:{};if("function"==typeof document.querySelectorAll)for(var e={maxWith:document.getElementById("img-content").getBoundingClientRect().width,idAttr:"data-preloadingid"},n=0,r=t.config.length;n<r;n++)for(var i=t.config[n],o=document.querySelectorAll(i.querySelector),a=0,d=o.length;a<d;a++){var c=o[a],l=c.parentNode.getBoundingClientRect().width;l=Math.min(l,e.maxWith);var p=i.calW({parentWidth:l,node:c}),u=i.calH({parentWidth:l,node:c}),g=i.genId({index:a,node:c}),s=t.defaultContentTpl.replace(/#height#/g,u).replace(/#width#/g,p),h=document.createElement("div");if(h.innerHTML=s,i.replaceContentCssText){var C=i.replaceContentCssText.replace(/#height#/g,u).replace(/#width#/g,p);h.firstChild.style.cssText=C}else i.appendContentCssText&&(h.firstChild.style.cssText+=i.appendContentCssText);var f=i.outerContainerLeft+h.innerHTML+i.outerContainerRight;h.innerHTML=f,h.firstChild.setAttribute(e.idAttr,g),c.parentNode.insertBefore(h.firstChild,c.nextSibling)}}(t)}();</script>
+<script type="text/javascript" nonce="1412121176" reportloaderror>
+// 白名单的class不能去除
+var whiteList = 'rich_pages,blockquote_info,blockquote_biz,blockquote_other,blockquote_article,js_jump_icon,h5_image_link,js_banner_container,js_list_container,js_cover,js_tx_video_container,js_product_err_container,js_product_loop_content,js_product_container,img_loading,list-paddingleft-1,list-paddingleft-2,list-paddingleft-3,selectTdClass,noBorderTable,ue-table-interlace-color-single,ue-table-interlace-color-double,__bg_gif,weapp_text_link,weapp_image_link,js_img_loading,wx_video_context,db,wx_video_thumb_primary,wx_video_play_btn,wx_video_mask,qqmusic_area,tc,tips_global,unsupport_tips,qqmusic_wrp,appmsg_card_context,appmsg_card_active,wx_tap_card,js_wx_tap_highlight,wx_tap_link,qqmusic_bd,play_area,icon_qqmusic_switch,pic_qqmusic_default,qqmusic_thumb,access_area,qqmusic_songname,qqmusic_singername,qqmusic_source,js_audio_frame,share_audio_context,flex_context,pages_reset,share_audio_switch,icon_share_audio_switch,share_audio_info,flex_bd,share_audio_title,share_audio_tips,share_audio_progress_wrp,share_audio_progress,share_audio_progress_inner,share_audio_progress_buffer,share_audio_progress_loading,share_audio_progress_loading_inner,share_audio_progress_handle,share_audio_desc,share_audio_length_current,share_audio_length_total,video_iframe,vote_iframe,js_editor_vote_card,res_iframe,card_iframe,js_editor_card,weapp_display_element,js_weapp_display_element,weapp_card,app_context,weapp_card_bd,weapp_card_profile,radius_avatar,weapp_card_avatar,weapp_card_nickname,weapp_card_info,weapp_card_title,weapp_card_thumb_wrp,weapp_card_ft,weapp_card_logo,js_pay_btn,pay,pay__mask,wx_video_loading,js_redpacketcover,js_uneditable,js_uneditablemouseover,js_editor_qqmusic,js_editor_audio,ct_geography_loc_tip,js_poi_entry,subsc_context,subsc_btn,reset_btn,js_subsc_btn,icon_subsc'.split(',');
+var qaClassPrefix = 'qa__';
+var whiteListReg = [
+  new RegExp("^wxw"),
+  new RegExp("^weui"),
+  new RegExp("^appmsg"),
+  new RegExp("^audio"),
+  new RegExp("^music"),
+  new RegExp("^cps_inner"),
+  new RegExp("^bizsvr_"), // 后台压缩样式
+  new RegExp("^code-snippet"), // 代码块样式
+  new RegExp("^" + qaClassPrefix), // 问答卡片样式
+  new RegExp("^wx-edui-"), // 图文编辑器相关样式统一前缀
+  new RegExp("^wx_"), // 微信样式统一前缀
+  new RegExp("^wx-"), // 微信样式统一前缀
+  new RegExp('^js_darkmode__'), // 暗黑模式统一前缀
+  new RegExp('^js_wechannel'), // 视频号统一前缀
+];
+</script>
+<script type="text/javascript" nonce="1412121176" reportloaderror>
+function htmlDecode(str) {
+  return str
+    .replace(/&#39;/g, '\'')
+    .replace(/<br\s*(\/)?\s*>/g, '\n')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&amp;/g, '&')
+    .replace(/&nbsp;/g, ' ');
+}
+
+var uin = '';
+var key = '';
+var pass_ticket = '';
+var new_appmsg = 1;
+var item_show_type = "0";
+var real_item_show_type = "0";
+var can_see_complaint = "0";
+var tid = "";
+var aid = "";
+var clientversion = "";
+var appuin = "" || "MzA4NTU2MTg3MQ==";
+var voiceid = "";
+
+var source = "";
+var ascene = "";
+var subscene = "";
+var sessionid = "" || "svr_f5b439d0780";
+var abtest_cookie = "";
+
+var scene = 75;
+
+var itemidx = "";
+var appmsg_token = "";
+var _copyright_stat = "2";
+var _ori_article_type = "";
+
+var is_follow = "";
+var nickname = "TGO鲲鹏会";
+var appmsg_type = "9";
+var ct = "1648813859";
+var user_name = "gh_4c81692e80ba";
+var fakeid = "";
+var version = "";
+var is_limit_user = "0";
+var round_head_img = "http://mmbiz.qpic.cn/mmbiz_png/boqKyJNBCy1PMqvCGgD6GQiaFs2U6YtYXNGmEy8nY8kWEfzqC7nia0icrLXOrszcRGv9avmwWEI32skmsnFGVIeGQ/0?wx_fmt=png";
+var hd_head_img = "http://wx.qlogo.cn/mmhead/Q3auHgzwzM5DokyH00xoAjdBebnd1tQkj7icUZd67zVholQwLHvP0qA/0" || "";
+var ori_head_img_url = "http://wx.qlogo.cn/mmhead/Q3auHgzwzM5DokyH00xoAjdBebnd1tQkj7icUZd67zVholQwLHvP0qA/132";
+var msg_title = '姜宁，带程序员前往开源“乌托邦” | GTLC 人物'.html(false);
+var msg_desc = htmlDecode("开源最大的魅力是可以跟开发者交流");
+var msg_cdn_url = "http://mmbiz.qpic.cn/mmbiz_jpg/boqKyJNBCy2gLKGQX3FLfMibnSeQqcMn9qYJzGhe9ZZqKgqT0Pu1M2Q7966wJFQVxkbPUaZadhwI05r9P58BavA/0?wx_fmt=jpeg"; // 首图idx=0时2.35:1 ， 次图idx!=0时1:1
+var cdn_url_1_1 = "https://mmbiz.qlogo.cn/mmbiz_jpg/boqKyJNBCy2gLKGQX3FLfMibnSeQqcMn9yrL9cWZ0FBy55Q4shlm0WwvQiaqxTwlBicsS0WyicqqIsfRQCkoLNyvqw/0?wx_fmt=jpeg"; // 1:1比例的封面图
+var cdn_url_235_1 = "https://mmbiz.qlogo.cn/mmbiz_jpg/boqKyJNBCy2gLKGQX3FLfMibnSeQqcMn9qYJzGhe9ZZqKgqT0Pu1M2Q7966wJFQVxkbPUaZadhwI05r9P58BavA/0?wx_fmt=jpeg"; // 首图idx=0时2.35:1 ， 次图idx!=0时1:1
+// var msg_link = "";
+var msg_link = ""; // @radeonwu
+var user_uin = "" * 1;
+var msg_source_url = 'https://tgo.infoq.cn/join';
+var img_format = 'jpeg';
+var srcid = '';
+var req_id = '0121nNVupC7jizuuFCSdAXvO';
+var networkType;
+var appmsgid = "2655207886" || '' || '';
+var comment_id = "2335750668873203713" || "2335750668873203713" * 1;
+var comment_enabled = "" * 1;
+var is_https_res = ("" * 1) && (location.protocol == "https:");
+var msg_daily_idx = "0" || "";
+var profileReportInfo = "" || "";
+
+var devicetype = "";
+var source_encode_biz = "MjM5NzM0MjcyMQ=="; // 转载来源的公众号encode biz
+var source_username = "gh_430521f7587e";
+// var profile_ext_signature = "" || "";
+var reprint_ticket = "uKHgPlUoecApI%2BIIryO15DA%2BjiChwU%2B6dCW0prQZfEKvHFunLjRpcXWrCVO07Mxx";
+var source_mid = "2650142120";
+var source_idx = "2";
+var source_biz = "2397342721";
+var author_id = "";
+
+// 压缩标志位
+var optimizing_flag = "0" * 1;
+
+// 广告灰度实验取消 @add by scotthuang
+// var ad_abtest_padding = "0" * 1;
+
+var show_comment = "";
+var __appmsgCgiData = {
+  wxa_product: "" * 1,
+  wxa_cps: "" * 1,
+  show_msg_voice: "0" * 1,
+  can_use_page: "" * 1,
+  is_wxg_stuff_uin: "0" * 1,
+  card_pos: "0",
+  copyright_stat: "2",
+  source_biz: "2397342721",
+  hd_head_img: "http://wx.qlogo.cn/mmhead/Q3auHgzwzM5DokyH00xoAjdBebnd1tQkj7icUZd67zVholQwLHvP0qA/0" || (window.location.protocol + "//" + window.location.host + "//res.wx.qq.com/mmbizwap/zh_CN/htmledition/images/pic/appmsg/pic_rumor_link.2x5cbc32.jpg"),
+  has_red_packet_cover: "0" * 1 || 0,
+  minishopCardData: ""
+};
+var _empty_v = "//res.wx.qq.com/mmbizwap/zh_CN/htmledition/images/pic/pages/voice/empty5cbc32.mp3";
+var appmsg_album_info = (function () {
+  var curAlbumId = '';
+  var publicTagInfo = [
+              ];
+  for (var i = 0; i < publicTagInfo.length; i++) {
+    if (curAlbumId) {
+      if (curAlbumId === publicTagInfo[i].id) {
+        return publicTagInfo[i];
+      }
+    } else {
+      if (publicTagInfo[i].continousReadOn) {
+        return publicTagInfo[i];
+      }
+    }
+  }
+  return {};
+})();
+var copyright_stat = "2" * 1;
+var hideSource = "0" * 1;
+
+var pay_fee = "" * 1;
+var pay_timestamp = "";
+var need_pay = "" * 1;
+var is_pay_subscribe = "0" * 1;
+
+var need_report_cost = "0" * 1;
+var use_tx_video_player = "0" * 1;
+var appmsg_fe_filter = "contenteditable";
+
+var friend_read_source = "" || "";
+var friend_read_version = "" || "";
+var friend_read_class_id = "" || "";
+
+var is_only_read = "1" * 1;
+var read_num = "" * 1;
+var like_num = "" * 1;
+var liked = "" == 'true' ? true : false;
+var is_temp_url = "" ? 1 : 0;
+var send_time = "";
+var icon_emotion_switch = "//res.wx.qq.com/mmbizwap/zh_CN/htmledition/images/icon/appmsg/emotion/icon_emotion_switch5cbc32.svg";
+var icon_emotion_switch_active = "//res.wx.qq.com/mmbizwap/zh_CN/htmledition/images/icon/appmsg/emotion/icon_emotion_switch_active5cbc32.svg";
+var icon_emotion_switch_primary = "//res.wx.qq.com/mmbizwap/zh_CN/htmledition/images/icon/appmsg/emotion/icon_emotion_switch_primary5cbc32.svg";
+var icon_emotion_switch_active_primary = "//res.wx.qq.com/mmbizwap/zh_CN/htmledition/images/icon/appmsg/emotion/icon_emotion_switch_active_primary5cbc32.svg";
+var icon_loading_white = "//res.wx.qq.com/mmbizwap/zh_CN/htmledition/images/icon/common/icon_loading_white5cbc32.gif";
+var icon_audio_unread = "//res.wx.qq.com/mmbizwap/zh_CN/htmledition/images/icon/appmsg/audio/icon_audio_unread5cbc32.png";
+var icon_qqmusic_default = "//res.wx.qq.com/mmbizwap/zh_CN/htmledition/images/icon/appmsg/qqmusic/icon_qqmusic_default.2x5cbc32.png";
+var icon_qqmusic_source = "//res.wx.qq.com/mmbizwap/zh_CN/htmledition/images/icon/appmsg/qqmusic/icon_qqmusic_source5cbc32.svg";
+var icon_kugou_source = "//res.wx.qq.com/mmbizwap/zh_CN/htmledition/images/icon/appmsg/kugou/icon_kugou_source5cbc32.png";
+
+var topic_default_img = '//res.wx.qq.com/mmbizwap/zh_CN/htmledition/images/icon/appmsg/topic/pic_book_thumb.2x5cbc32.png';
+var comment_edit_icon = '//res.wx.qq.com/mmbizwap/zh_CN/htmledition/images/icon/appmsg_new/icon_edit5cbc32.png';
+var comment_loading_img = '//res.wx.qq.com/mmbizwap/zh_CN/htmledition/images/icon/common/icon_loading_white5cbc32.gif';
+var comment_c2c_not_support_img = '//res.wx.qq.com/mmbizwap/zh_CN/htmledition/images/pic/appmsg/pic_discuss_more5cbc32.png';
+
+var voice_in_appmsg = {
+  "1": "1"
+  };
+var voiceList = {};
+voiceList={"voice_in_appmsg":[]}
+var reprint_style = '0' * 1;
+var wxa_img_alert = "" != 'false';
+
+// 小程序相关数据
+var weapp_sn_arr_json = "" || "";
+
+// 视频号相关数据
+var video_snap_json = "" || "";
+// profile相关数据
+var mp_profile = [
+  ];
+
+// 能力封禁字段
+var ban_scene = "0" * 1;
+
+var svr_time = "1648818866" * 1;
+// 加迁移文章字段, 默认为false
+var is_transfer_msg = "" * 1 || 0;
+
+var malicious_title_reason_id = "0" * 1; // 标题党wording id @radeonwu
+var malicious_content_type = "0" * 1; // 标题党类型 @radeonwu
+
+// 修改错别字逻辑
+var modify_time = "";
+
+// 限制跳转到公众号profile @radeonwu
+var isprofileblock = "0";
+
+var jumpInfo = [
+        {
+    title: '200 家企业首发! TGO 鲲鹏会打造有温度、可信赖的企业图谱'.html(false),
+    item_show_type: '0',
+    url: 'http://mp.weixin.qq.com/s?__biz=MzA4NTU2MTg3MQ==&amp;amp;mid=2655206761&amp;amp;idx=1&amp;amp;sn=7295d365ed3acc25c37f7561cae08f52&amp;amp;chksm=84619a09b316131fca573eb1482f1d68d2c9e8d9f2513d68a7b5d04cdc116762ecd08b447683&amp;amp;scene=21#wechat_redirect'.html(false).html(false), // 后台给的数据被encode了两次
+    subject_name: 'TGO鲲鹏会',
+    link_type: 'LINK_TYPE_MP_APPMSG',
+  }
+      ,  {
+    title: '官宣！首批分享嘉宾集结，开启科技未来 | GTLC 全球总站'.html(false),
+    item_show_type: '0',
+    url: 'http://mp.weixin.qq.com/s?__biz=MzA4NTU2MTg3MQ==&amp;amp;mid=2655207211&amp;amp;idx=1&amp;amp;sn=0d9e8de5babba19fc6f92a8e0a12e57e&amp;amp;chksm=8461984bb316115d000d15c82d8f47f7352784f5840be62c2da82a3f0dcab1919eda8379c15e&amp;amp;scene=21#wechat_redirect'.html(false).html(false), // 后台给的数据被encode了两次
+    subject_name: 'TGO鲲鹏会',
+    link_type: 'LINK_TYPE_MP_APPMSG',
+  }
+      ,  {
+    title: 'Apache SkyWalking创始人吴晟：开源如何国际化'.html(false),
+    item_show_type: '0',
+    url: 'http://mp.weixin.qq.com/s?__biz=MzA4NTU2MTg3MQ==&amp;amp;mid=2655204298&amp;amp;idx=1&amp;amp;sn=860a3e37b4b2e7beffebcaf773a491b7&amp;amp;chksm=846194aab3161dbc597edae18cf8067311f3cdd7cc8ad779f15fa4aff249befa712871af1619&amp;amp;scene=21#wechat_redirect'.html(false).html(false), // 后台给的数据被encode了两次
+    subject_name: 'TGO鲲鹏会',
+    link_type: 'LINK_TYPE_MP_APPMSG',
+  }
+    ];
+
+var hasRelatedArticleInfo = '0' * 1 || 0; // 有相关阅读的数据 @radeonwu
+var relatedArticleFlag = '' * 1 || 0; // 0不用拓展，为1时拓展3条 @yinshen
+
+window.wxtoken = "777";
+window.is_login = '' * 1; // 把上面的那段代码改一下，方便配置回退
+
+window.__moon_initcallback = function () {
+  if (!!window.__initCatch) {
+    window.__initCatch({
+      idkey: 27611 + 2,
+      startKey: 0,
+      limit: 128,
+      badjsId: 43,
+      reportOpt: {
+        uin: uin,
+        biz: biz,
+        mid: mid,
+        idx: idx,
+        sn: sn
+      },
+      extInfo: {
+        network_rate: 0.01,    //网络错误采样率
+        badjs_rate: 0.1 // badjs上报叠加采样率
+      }
+    });
+  }
+}
+window.isSg=true;
+window.sg_qr_code = "/rr?timestamp=1648818866\x26amp;src=11\x26amp;ver=1\x26amp;signature=Hg7Tk1Q93AmjycMPtHv8nSRQuFIM1Qu1kVesA4LCCa5qVCysDiQu12oUtySfxQwmOeDc5Bipc4OlHFZcVpjNyIZ9uE6hEBYNHBu5Y5CTJf8=";
+window.sg_data = {
+  src: "11",
+  ver: "3712",
+  timestamp: "1648818655",
+  signature: "BvPdfKv7qFqAytxeX-nTAzYL9tUNvWQBZrfdx*o5E7vjxNC3l4ZgnmyHt10pAe3wxH0MxZFl8eXrgvWJfFBKq3E5H77hk8yZ2uFWyu9wXs0FtyZGomzooJWhx4f37ytV"
+};
+window.__moon_initcallback = function () {
+  if (!!window.__initCatch) {
+    window.__initCatch({
+      idkey: 29711,
+      startKey: 120,
+      badjsId: 63,
+      reportOpt: {
+        uin: uin,
+        biz: biz,
+        mid: mid,
+        idx: idx,
+        sn: sn
+      },
+      extInfo: {
+        network_rate: 0.01    //网络错误采样率
+      }
+    });
+  }
+};
+// msg_title != title
+var title = "TGO鲲鹏会";
+
+var is_new_msg = true;
+// var appmsg_like_type = "2" * 1 ? "2" * 1 : 1; //区分点赞和看一看
+// var appmsg_like_type = 2;
+
+var is_wash = '' * 1;
+var topbarEnable = false;
+var enterid = "" * 1 || "" * 1 || parseInt(Date.now() / 1000);
+// var appid_list = ""; // 改图文所在的小程序的appid列表，只在小程序中使用
+var miniprogram_appid = ""; // 该图文所在的小程序的appid
+
+var defaultAvatarUrl = '//res.wx.qq.com/mmbizwap/zh_CN/htmledition/images/pic/common/avatar_default5cbc32.svg';
+
+document.addEventListener('DOMContentLoaded', function () {
+  window.domCompleteTime = Date.now();
+});
+
+// 记录是否有转载推荐语
+      var hasRecommendMsg = 0;
+  ;
+// 付费阅读
+var isPaySubscribe = '0' * 1; // 是否付费文章
+var isPaid = '0' * 1; // 是否已付费
+var payShowIAPPrice = 1; // 是否启用IAP价格显示，用于外币显示
+var payProductId = '' || ''; // 付费金额对应商品ID，用于iOS多币种金额IAP查询
+var previewPercent = '0' || ''; // 试读比例
+var payGiftsCount = '0' * 1 || 0; // 付费赠送数量
+var payFreeGift = '' * 1 || 0; // 是否是领取付费赠送的用户
+var is_finished_preview = 0; // 是否试读完
+var jump2pay = '' * 1; // 是否跳转到支付按钮的位置
+
+var isFans; // getext里获取数据再塞到这里
+var is_need_reward = (isPaySubscribe && !isPaid) ? 0 : "0" * 1; // 非付费不可赞赏
+var is_teenager = '' * 1 || 0; //是否处于青少年模式
+var is_care_mode = '' * 1 || 0; //是否处于关怀模式
+
+// 段落投诉
+var anchor_tree_msg = '';
+// Dark Mode
+var colorScheme = ''; // ''|'dark'|'light', 空表示跟随系统
+
+var iapPriceInfo = {
+  };
+var productPayPackage = {
+    iap_price_info: iapPriceInfo
+};
+
+// 漫画原创
+var isCartoonCopyright = '0' * 1; // 是否漫画原创
+
+// 图文朗读
+var show_msg_voice = '' * 1;
+var qnaCardData = '';
+var exptype = '' || '';
+var expsessionid = '' || '';
+
+// 留言相关
+var goContentId = '';
+var goReplyId = '';
+
+var show_related_article = '' * 1; // 是否强制出相关阅读
+
+var wwdistype = ''; // 企微场景，industrynews表示行业资讯
+
+// 腾讯视频相关
+window.cgiData = {
+  appImg: '//res.wx.qq.com/mmbizwap/zh_CN/htmledition/images/pic/pages/video/pic_v.2x5cbc32.png',
+}
+</script><script type="text/javascript" nonce="1412121176" reportloaderror>!function(e,t){"object"==typeof exports&&"object"==typeof module?module.exports=t():"function"==typeof define&&define.amd?define("Darkmode",[],t):"object"==typeof exports?exports.Darkmode=t():e.Darkmode=t()}(window,(function(){return function(e){var t={};function r(n){if(t[n])return t[n].exports;var a=t[n]={i:n,l:!1,exports:{}};return e[n].call(a.exports,a,a.exports,r),a.l=!0,a.exports}return r.m=e,r.c=t,r.d=function(e,t,n){r.o(e,t)||Object.defineProperty(e,t,{enumerable:!0,get:n})},r.r=function(e){"undefined"!=typeof Symbol&&Symbol.toStringTag&&Object.defineProperty(e,Symbol.toStringTag,{value:"Module"}),Object.defineProperty(e,"__esModule",{value:!0})},r.t=function(e,t){if(1&t&&(e=r(e)),8&t)return e;if(4&t&&"object"==typeof e&&e&&e.__esModule)return e;var n=Object.create(null);if(r.r(n),Object.defineProperty(n,"default",{enumerable:!0,value:e}),2&t&&"string"!=typeof e)for(var a in e)r.d(n,a,function(t){return e[t]}.bind(null,a));return n},r.n=function(e){var t=e&&e.__esModule?function(){return e.default}:function(){return e};return r.d(t,"a",t),t},r.o=function(e,t){return Object.prototype.hasOwnProperty.call(e,t)},r.p="",r(r.s=9)}([function(e,t,r){"use strict";var n=r(3),a=r(6),o=[].slice,i=["keyword","gray","hex"],l={};Object.keys(a).forEach((function(e){l[o.call(a[e].labels).sort().join("")]=e}));var s={};function u(e,t){if(!(this instanceof u))return new u(e,t);if(t&&t in i&&(t=null),t&&!(t in a))throw new Error("Unknown model: "+t);var r,c;if(null==e)this.model="rgb",this.color=[0,0,0],this.valpha=1;else if(e instanceof u)this.model=e.model,this.color=e.color.slice(),this.valpha=e.valpha;else if("string"==typeof e){var h=n.get(e);if(null===h)throw new Error("Unable to parse color from string: "+e);this.model=h.model,c=a[this.model].channels,this.color=h.value.slice(0,c),this.valpha="number"==typeof h.value[c]?h.value[c]:1}else if(e.length){this.model=t||"rgb",c=a[this.model].channels;var f=o.call(e,0,c);this.color=d(f,c),this.valpha="number"==typeof e[c]?e[c]:1}else if("number"==typeof e)e&=16777215,this.model="rgb",this.color=[e>>16&255,e>>8&255,255&e],this.valpha=1;else{this.valpha=1;var g=Object.keys(e);"alpha"in e&&(g.splice(g.indexOf("alpha"),1),this.valpha="number"==typeof e.alpha?e.alpha:0);var b=g.sort().join("");if(!(b in l))throw new Error("Unable to parse color from object: "+JSON.stringify(e));this.model=l[b];var p=a[this.model].labels,y=[];for(r=0;r<p.length;r++)y.push(e[p[r]]);this.color=d(y)}if(s[this.model])for(c=a[this.model].channels,r=0;r<c;r++){var m=s[this.model][r];m&&(this.color[r]=m(this.color[r]))}this.valpha=Math.max(0,Math.min(1,this.valpha)),Object.freeze&&Object.freeze(this)}function c(e,t,r){return(e=Array.isArray(e)?e:[e]).forEach((function(e){(s[e]||(s[e]=[]))[t]=r})),e=e[0],function(n){var a;return arguments.length?(r&&(n=r(n)),(a=this[e]()).color[t]=n,a):(a=this[e]().color[t],r&&(a=r(a)),a)}}function h(e){return function(t){return Math.max(0,Math.min(e,t))}}function f(e){return Array.isArray(e)?e:[e]}function d(e,t){for(var r=0;r<t;r++)"number"!=typeof e[r]&&(e[r]=0);return e}u.prototype={toString:function(){return this.string()},toJSON:function(){return this[this.model]()},string:function(e){var t=this.model in n.to?this:this.rgb(),r=1===(t=t.round("number"==typeof e?e:1)).valpha?t.color:t.color.concat(this.valpha);return n.to[t.model](r)},percentString:function(e){var t=this.rgb().round("number"==typeof e?e:1),r=1===t.valpha?t.color:t.color.concat(this.valpha);return n.to.rgb.percent(r)},array:function(){return 1===this.valpha?this.color.slice():this.color.concat(this.valpha)},object:function(){for(var e={},t=a[this.model].channels,r=a[this.model].labels,n=0;n<t;n++)e[r[n]]=this.color[n];return 1!==this.valpha&&(e.alpha=this.valpha),e},unitArray:function(){var e=this.rgb().color;return e[0]/=255,e[1]/=255,e[2]/=255,1!==this.valpha&&e.push(this.valpha),e},unitObject:function(){var e=this.rgb().object();return e.r/=255,e.g/=255,e.b/=255,1!==this.valpha&&(e.alpha=this.valpha),e},round:function(e){return e=Math.max(e||0,0),new u(this.color.map(function(e){return function(t){return function(e,t){return Number(e.toFixed(t))}(t,e)}}(e)).concat(this.valpha),this.model)},alpha:function(e){return arguments.length?new u(this.color.concat(Math.max(0,Math.min(1,e))),this.model):this.valpha},red:c("rgb",0,h(255)),green:c("rgb",1,h(255)),blue:c("rgb",2,h(255)),hue:c(["hsl","hsv","hsl","hwb","hcg"],0,(function(e){return(e%360+360)%360})),saturationl:c("hsl",1,h(100)),lightness:c("hsl",2,h(100)),saturationv:c("hsv",1,h(100)),value:c("hsv",2,h(100)),chroma:c("hcg",1,h(100)),gray:c("hcg",2,h(100)),white:c("hwb",1,h(100)),wblack:c("hwb",2,h(100)),cyan:c("cmyk",0,h(100)),magenta:c("cmyk",1,h(100)),yellow:c("cmyk",2,h(100)),black:c("cmyk",3,h(100)),x:c("xyz",0,h(100)),y:c("xyz",1,h(100)),z:c("xyz",2,h(100)),l:c("lab",0,h(100)),a:c("lab",1),b:c("lab",2),keyword:function(e){return arguments.length?new u(e):a[this.model].keyword(this.color)},hex:function(e){return arguments.length?new u(e):n.to.hex(this.rgb().round().color)},rgbNumber:function(){var e=this.rgb().color;return(255&e[0])<<16|(255&e[1])<<8|255&e[2]},luminosity:function(){for(var e=this.rgb().color,t=[],r=0;r<e.length;r++){var n=e[r]/255;t[r]=n<=.03928?n/12.92:Math.pow((n+.055)/1.055,2.4)}return.2126*t[0]+.7152*t[1]+.0722*t[2]},contrast:function(e){var t=this.luminosity(),r=e.luminosity();return t>r?(t+.05)/(r+.05):(r+.05)/(t+.05)},level:function(e){var t=this.contrast(e);return t>=7.1?"AAA":t>=4.5?"AA":""},isDark:function(){var e=this.rgb().color;return(299*e[0]+587*e[1]+114*e[2])/1e3<128},isLight:function(){return!this.isDark()},negate:function(){for(var e=this.rgb(),t=0;t<3;t++)e.color[t]=255-e.color[t];return e},lighten:function(e){var t=this.hsl();return t.color[2]+=t.color[2]*e,t},darken:function(e){var t=this.hsl();return t.color[2]-=t.color[2]*e,t},saturate:function(e){var t=this.hsl();return t.color[1]+=t.color[1]*e,t},desaturate:function(e){var t=this.hsl();return t.color[1]-=t.color[1]*e,t},whiten:function(e){var t=this.hwb();return t.color[1]+=t.color[1]*e,t},blacken:function(e){var t=this.hwb();return t.color[2]+=t.color[2]*e,t},grayscale:function(){var e=this.rgb().color,t=.3*e[0]+.59*e[1]+.11*e[2];return u.rgb(t,t,t)},fade:function(e){return this.alpha(this.valpha-this.valpha*e)},opaquer:function(e){return this.alpha(this.valpha+this.valpha*e)},rotate:function(e){var t=this.hsl(),r=t.color[0];return r=(r=(r+e)%360)<0?360+r:r,t.color[0]=r,t},mix:function(e,t){if(!e||!e.rgb)throw new Error('Argument to "mix" was not a Color instance, but rather an instance of '+typeof e);var r=e.rgb(),n=this.rgb(),a=void 0===t?.5:t,o=2*a-1,i=r.alpha()-n.alpha(),l=((o*i==-1?o:(o+i)/(1+o*i))+1)/2,s=1-l;return u.rgb(l*r.red()+s*n.red(),l*r.green()+s*n.green(),l*r.blue()+s*n.blue(),r.alpha()*a+n.alpha()*(1-a))}},Object.keys(a).forEach((function(e){if(-1===i.indexOf(e)){var t=a[e].channels;u.prototype[e]=function(){if(this.model===e)return new u(this);if(arguments.length)return new u(arguments,e);var r="number"==typeof arguments[t]?t:this.valpha;return new u(f(a[this.model][e].raw(this.color)).concat(r),e)},u[e]=function(r){return"number"==typeof r&&(r=d(o.call(arguments),t)),new u(r,e)}}})),e.exports=u},function(e,t,r){"use strict";e.exports={aliceblue:[240,248,255],antiquewhite:[250,235,215],aqua:[0,255,255],aquamarine:[127,255,212],azure:[240,255,255],beige:[245,245,220],bisque:[255,228,196],black:[0,0,0],blanchedalmond:[255,235,205],blue:[0,0,255],blueviolet:[138,43,226],brown:[165,42,42],burlywood:[222,184,135],cadetblue:[95,158,160],chartreuse:[127,255,0],chocolate:[210,105,30],coral:[255,127,80],cornflowerblue:[100,149,237],cornsilk:[255,248,220],crimson:[220,20,60],cyan:[0,255,255],darkblue:[0,0,139],darkcyan:[0,139,139],darkgoldenrod:[184,134,11],darkgray:[169,169,169],darkgreen:[0,100,0],darkgrey:[169,169,169],darkkhaki:[189,183,107],darkmagenta:[139,0,139],darkolivegreen:[85,107,47],darkorange:[255,140,0],darkorchid:[153,50,204],darkred:[139,0,0],darksalmon:[233,150,122],darkseagreen:[143,188,143],darkslateblue:[72,61,139],darkslategray:[47,79,79],darkslategrey:[47,79,79],darkturquoise:[0,206,209],darkviolet:[148,0,211],deeppink:[255,20,147],deepskyblue:[0,191,255],dimgray:[105,105,105],dimgrey:[105,105,105],dodgerblue:[30,144,255],firebrick:[178,34,34],floralwhite:[255,250,240],forestgreen:[34,139,34],fuchsia:[255,0,255],gainsboro:[220,220,220],ghostwhite:[248,248,255],gold:[255,215,0],goldenrod:[218,165,32],gray:[128,128,128],green:[0,128,0],greenyellow:[173,255,47],grey:[128,128,128],honeydew:[240,255,240],hotpink:[255,105,180],indianred:[205,92,92],indigo:[75,0,130],ivory:[255,255,240],khaki:[240,230,140],lavender:[230,230,250],lavenderblush:[255,240,245],lawngreen:[124,252,0],lemonchiffon:[255,250,205],lightblue:[173,216,230],lightcoral:[240,128,128],lightcyan:[224,255,255],lightgoldenrodyellow:[250,250,210],lightgray:[211,211,211],lightgreen:[144,238,144],lightgrey:[211,211,211],lightpink:[255,182,193],lightsalmon:[255,160,122],lightseagreen:[32,178,170],lightskyblue:[135,206,250],lightslategray:[119,136,153],lightslategrey:[119,136,153],lightsteelblue:[176,196,222],lightyellow:[255,255,224],lime:[0,255,0],limegreen:[50,205,50],linen:[250,240,230],magenta:[255,0,255],maroon:[128,0,0],mediumaquamarine:[102,205,170],mediumblue:[0,0,205],mediumorchid:[186,85,211],mediumpurple:[147,112,219],mediumseagreen:[60,179,113],mediumslateblue:[123,104,238],mediumspringgreen:[0,250,154],mediumturquoise:[72,209,204],mediumvioletred:[199,21,133],midnightblue:[25,25,112],mintcream:[245,255,250],mistyrose:[255,228,225],moccasin:[255,228,181],navajowhite:[255,222,173],navy:[0,0,128],oldlace:[253,245,230],olive:[128,128,0],olivedrab:[107,142,35],orange:[255,165,0],orangered:[255,69,0],orchid:[218,112,214],palegoldenrod:[238,232,170],palegreen:[152,251,152],paleturquoise:[175,238,238],palevioletred:[219,112,147],papayawhip:[255,239,213],peachpuff:[255,218,185],peru:[205,133,63],pink:[255,192,203],plum:[221,160,221],powderblue:[176,224,230],purple:[128,0,128],rebeccapurple:[102,51,153],red:[255,0,0],rosybrown:[188,143,143],royalblue:[65,105,225],saddlebrown:[139,69,19],salmon:[250,128,114],sandybrown:[244,164,96],seagreen:[46,139,87],seashell:[255,245,238],sienna:[160,82,45],silver:[192,192,192],skyblue:[135,206,235],slateblue:[106,90,205],slategray:[112,128,144],slategrey:[112,128,144],snow:[255,250,250],springgreen:[0,255,127],steelblue:[70,130,180],tan:[210,180,140],teal:[0,128,128],thistle:[216,191,216],tomato:[255,99,71],turquoise:[64,224,208],violet:[238,130,238],wheat:[245,222,179],white:[255,255,255],whitesmoke:[245,245,245],yellow:[255,255,0],yellowgreen:[154,205,50]}},function(e,t,r){var n=r(7),a={};for(var o in n)n.hasOwnProperty(o)&&(a[n[o]]=o);var i=e.exports={rgb:{channels:3,labels:"rgb"},hsl:{channels:3,labels:"hsl"},hsv:{channels:3,labels:"hsv"},hwb:{channels:3,labels:"hwb"},cmyk:{channels:4,labels:"cmyk"},xyz:{channels:3,labels:"xyz"},lab:{channels:3,labels:"lab"},lch:{channels:3,labels:"lch"},hex:{channels:1,labels:["hex"]},keyword:{channels:1,labels:["keyword"]},ansi16:{channels:1,labels:["ansi16"]},ansi256:{channels:1,labels:["ansi256"]},hcg:{channels:3,labels:["h","c","g"]},apple:{channels:3,labels:["r16","g16","b16"]},gray:{channels:1,labels:["gray"]}};for(var l in i)if(i.hasOwnProperty(l)){if(!("channels"in i[l]))throw new Error("missing channels property: "+l);if(!("labels"in i[l]))throw new Error("missing channel labels property: "+l);if(i[l].labels.length!==i[l].channels)throw new Error("channel and label counts mismatch: "+l);var s=i[l].channels,u=i[l].labels;delete i[l].channels,delete i[l].labels,Object.defineProperty(i[l],"channels",{value:s}),Object.defineProperty(i[l],"labels",{value:u})}i.rgb.hsl=function(e){var t,r,n=e[0]/255,a=e[1]/255,o=e[2]/255,i=Math.min(n,a,o),l=Math.max(n,a,o),s=l-i;return l===i?t=0:n===l?t=(a-o)/s:a===l?t=2+(o-n)/s:o===l&&(t=4+(n-a)/s),(t=Math.min(60*t,360))<0&&(t+=360),r=(i+l)/2,[t,100*(l===i?0:r<=.5?s/(l+i):s/(2-l-i)),100*r]},i.rgb.hsv=function(e){var t,r,n,a,o,i=e[0]/255,l=e[1]/255,s=e[2]/255,u=Math.max(i,l,s),c=u-Math.min(i,l,s),h=function(e){return(u-e)/6/c+.5};return 0===c?a=o=0:(o=c/u,t=h(i),r=h(l),n=h(s),i===u?a=n-r:l===u?a=1/3+t-n:s===u&&(a=2/3+r-t),a<0?a+=1:a>1&&(a-=1)),[360*a,100*o,100*u]},i.rgb.hwb=function(e){var t=e[0],r=e[1],n=e[2];return[i.rgb.hsl(e)[0],100*(1/255*Math.min(t,Math.min(r,n))),100*(n=1-1/255*Math.max(t,Math.max(r,n)))]},i.rgb.cmyk=function(e){var t,r=e[0]/255,n=e[1]/255,a=e[2]/255;return[100*((1-r-(t=Math.min(1-r,1-n,1-a)))/(1-t)||0),100*((1-n-t)/(1-t)||0),100*((1-a-t)/(1-t)||0),100*t]},i.rgb.keyword=function(e){var t=a[e];if(t)return t;var r,o,i,l=1/0;for(var s in n)if(n.hasOwnProperty(s)){var u=n[s],c=(o=e,i=u,Math.pow(o[0]-i[0],2)+Math.pow(o[1]-i[1],2)+Math.pow(o[2]-i[2],2));c<l&&(l=c,r=s)}return r},i.keyword.rgb=function(e){return n[e]},i.rgb.xyz=function(e){var t=e[0]/255,r=e[1]/255,n=e[2]/255;return[100*(.4124*(t=t>.04045?Math.pow((t+.055)/1.055,2.4):t/12.92)+.3576*(r=r>.04045?Math.pow((r+.055)/1.055,2.4):r/12.92)+.1805*(n=n>.04045?Math.pow((n+.055)/1.055,2.4):n/12.92)),100*(.2126*t+.7152*r+.0722*n),100*(.0193*t+.1192*r+.9505*n)]},i.rgb.lab=function(e){var t=i.rgb.xyz(e),r=t[0],n=t[1],a=t[2];return n/=100,a/=108.883,r=(r/=95.047)>.008856?Math.pow(r,1/3):7.787*r+16/116,[116*(n=n>.008856?Math.pow(n,1/3):7.787*n+16/116)-16,500*(r-n),200*(n-(a=a>.008856?Math.pow(a,1/3):7.787*a+16/116))]},i.hsl.rgb=function(e){var t,r,n,a,o,i=e[0]/360,l=e[1]/100,s=e[2]/100;if(0===l)return[o=255*s,o,o];t=2*s-(r=s<.5?s*(1+l):s+l-s*l),a=[0,0,0];for(var u=0;u<3;u++)(n=i+1/3*-(u-1))<0&&n++,n>1&&n--,o=6*n<1?t+6*(r-t)*n:2*n<1?r:3*n<2?t+(r-t)*(2/3-n)*6:t,a[u]=255*o;return a},i.hsl.hsv=function(e){var t=e[0],r=e[1]/100,n=e[2]/100,a=r,o=Math.max(n,.01);return r*=(n*=2)<=1?n:2-n,a*=o<=1?o:2-o,[t,100*(0===n?2*a/(o+a):2*r/(n+r)),100*((n+r)/2)]},i.hsv.rgb=function(e){var t=e[0]/60,r=e[1]/100,n=e[2]/100,a=Math.floor(t)%6,o=t-Math.floor(t),i=255*n*(1-r),l=255*n*(1-r*o),s=255*n*(1-r*(1-o));switch(n*=255,a){case 0:return[n,s,i];case 1:return[l,n,i];case 2:return[i,n,s];case 3:return[i,l,n];case 4:return[s,i,n];case 5:return[n,i,l]}},i.hsv.hsl=function(e){var t,r,n,a=e[0],o=e[1]/100,i=e[2]/100,l=Math.max(i,.01);return n=(2-o)*i,r=o*l,[a,100*(r=(r/=(t=(2-o)*l)<=1?t:2-t)||0),100*(n/=2)]},i.hwb.rgb=function(e){var t,r,n,a,o,i,l,s=e[0]/360,u=e[1]/100,c=e[2]/100,h=u+c;switch(h>1&&(u/=h,c/=h),n=6*s-(t=Math.floor(6*s)),0!=(1&t)&&(n=1-n),a=u+n*((r=1-c)-u),t){default:case 6:case 0:o=r,i=a,l=u;break;case 1:o=a,i=r,l=u;break;case 2:o=u,i=r,l=a;break;case 3:o=u,i=a,l=r;break;case 4:o=a,i=u,l=r;break;case 5:o=r,i=u,l=a}return[255*o,255*i,255*l]},i.cmyk.rgb=function(e){var t=e[0]/100,r=e[1]/100,n=e[2]/100,a=e[3]/100;return[255*(1-Math.min(1,t*(1-a)+a)),255*(1-Math.min(1,r*(1-a)+a)),255*(1-Math.min(1,n*(1-a)+a))]},i.xyz.rgb=function(e){var t,r,n,a=e[0]/100,o=e[1]/100,i=e[2]/100;return r=-.9689*a+1.8758*o+.0415*i,n=.0557*a+-.204*o+1.057*i,t=(t=3.2406*a+-1.5372*o+-.4986*i)>.0031308?1.055*Math.pow(t,1/2.4)-.055:12.92*t,r=r>.0031308?1.055*Math.pow(r,1/2.4)-.055:12.92*r,n=n>.0031308?1.055*Math.pow(n,1/2.4)-.055:12.92*n,[255*(t=Math.min(Math.max(0,t),1)),255*(r=Math.min(Math.max(0,r),1)),255*(n=Math.min(Math.max(0,n),1))]},i.xyz.lab=function(e){var t=e[0],r=e[1],n=e[2];return r/=100,n/=108.883,t=(t/=95.047)>.008856?Math.pow(t,1/3):7.787*t+16/116,[116*(r=r>.008856?Math.pow(r,1/3):7.787*r+16/116)-16,500*(t-r),200*(r-(n=n>.008856?Math.pow(n,1/3):7.787*n+16/116))]},i.lab.xyz=function(e){var t,r,n,a=e[0];t=e[1]/500+(r=(a+16)/116),n=r-e[2]/200;var o=Math.pow(r,3),i=Math.pow(t,3),l=Math.pow(n,3);return r=o>.008856?o:(r-16/116)/7.787,t=i>.008856?i:(t-16/116)/7.787,n=l>.008856?l:(n-16/116)/7.787,[t*=95.047,r*=100,n*=108.883]},i.lab.lch=function(e){var t,r=e[0],n=e[1],a=e[2];return(t=360*Math.atan2(a,n)/2/Math.PI)<0&&(t+=360),[r,Math.sqrt(n*n+a*a),t]},i.lch.lab=function(e){var t,r=e[0],n=e[1];return t=e[2]/360*2*Math.PI,[r,n*Math.cos(t),n*Math.sin(t)]},i.rgb.ansi16=function(e){var t=e[0],r=e[1],n=e[2],a=1 in arguments?arguments[1]:i.rgb.hsv(e)[2];if(0===(a=Math.round(a/50)))return 30;var o=30+(Math.round(n/255)<<2|Math.round(r/255)<<1|Math.round(t/255));return 2===a&&(o+=60),o},i.hsv.ansi16=function(e){return i.rgb.ansi16(i.hsv.rgb(e),e[2])},i.rgb.ansi256=function(e){var t=e[0],r=e[1],n=e[2];return t===r&&r===n?t<8?16:t>248?231:Math.round((t-8)/247*24)+232:16+36*Math.round(t/255*5)+6*Math.round(r/255*5)+Math.round(n/255*5)},i.ansi16.rgb=function(e){var t=e%10;if(0===t||7===t)return e>50&&(t+=3.5),[t=t/10.5*255,t,t];var r=.5*(1+~~(e>50));return[(1&t)*r*255,(t>>1&1)*r*255,(t>>2&1)*r*255]},i.ansi256.rgb=function(e){if(e>=232){var t=10*(e-232)+8;return[t,t,t]}var r;return e-=16,[Math.floor(e/36)/5*255,Math.floor((r=e%36)/6)/5*255,r%6/5*255]},i.rgb.hex=function(e){var t=(((255&Math.round(e[0]))<<16)+((255&Math.round(e[1]))<<8)+(255&Math.round(e[2]))).toString(16).toUpperCase();return"000000".substring(t.length)+t},i.hex.rgb=function(e){var t=e.toString(16).match(/[a-f0-9]{6}|[a-f0-9]{3}/i);if(!t)return[0,0,0];var r=t[0];3===t[0].length&&(r=r.split("").map((function(e){return e+e})).join(""));var n=parseInt(r,16);return[n>>16&255,n>>8&255,255&n]},i.rgb.hcg=function(e){var t,r=e[0]/255,n=e[1]/255,a=e[2]/255,o=Math.max(Math.max(r,n),a),i=Math.min(Math.min(r,n),a),l=o-i;return t=l<=0?0:o===r?(n-a)/l%6:o===n?2+(a-r)/l:4+(r-n)/l+4,t/=6,[360*(t%=1),100*l,100*(l<1?i/(1-l):0)]},i.hsl.hcg=function(e){var t=e[1]/100,r=e[2]/100,n=1,a=0;return(n=r<.5?2*t*r:2*t*(1-r))<1&&(a=(r-.5*n)/(1-n)),[e[0],100*n,100*a]},i.hsv.hcg=function(e){var t=e[1]/100,r=e[2]/100,n=t*r,a=0;return n<1&&(a=(r-n)/(1-n)),[e[0],100*n,100*a]},i.hcg.rgb=function(e){var t=e[0]/360,r=e[1]/100,n=e[2]/100;if(0===r)return[255*n,255*n,255*n];var a,o=[0,0,0],i=t%1*6,l=i%1,s=1-l;switch(Math.floor(i)){case 0:o[0]=1,o[1]=l,o[2]=0;break;case 1:o[0]=s,o[1]=1,o[2]=0;break;case 2:o[0]=0,o[1]=1,o[2]=l;break;case 3:o[0]=0,o[1]=s,o[2]=1;break;case 4:o[0]=l,o[1]=0,o[2]=1;break;default:o[0]=1,o[1]=0,o[2]=s}return a=(1-r)*n,[255*(r*o[0]+a),255*(r*o[1]+a),255*(r*o[2]+a)]},i.hcg.hsv=function(e){var t=e[1]/100,r=t+e[2]/100*(1-t),n=0;return r>0&&(n=t/r),[e[0],100*n,100*r]},i.hcg.hsl=function(e){var t=e[1]/100,r=e[2]/100*(1-t)+.5*t,n=0;return r>0&&r<.5?n=t/(2*r):r>=.5&&r<1&&(n=t/(2*(1-r))),[e[0],100*n,100*r]},i.hcg.hwb=function(e){var t=e[1]/100,r=t+e[2]/100*(1-t);return[e[0],100*(r-t),100*(1-r)]},i.hwb.hcg=function(e){var t=e[1]/100,r=1-e[2]/100,n=r-t,a=0;return n<1&&(a=(r-n)/(1-n)),[e[0],100*n,100*a]},i.apple.rgb=function(e){return[e[0]/65535*255,e[1]/65535*255,e[2]/65535*255]},i.rgb.apple=function(e){return[e[0]/255*65535,e[1]/255*65535,e[2]/255*65535]},i.gray.rgb=function(e){return[e[0]/100*255,e[0]/100*255,e[0]/100*255]},i.gray.hsl=i.gray.hsv=function(e){return[0,0,e[0]]},i.gray.hwb=function(e){return[0,100,e[0]]},i.gray.cmyk=function(e){return[0,0,0,e[0]]},i.gray.lab=function(e){return[e[0],0,0]},i.gray.hex=function(e){var t=255&Math.round(e[0]/100*255),r=((t<<16)+(t<<8)+t).toString(16).toUpperCase();return"000000".substring(r.length)+r},i.rgb.gray=function(e){return[(e[0]+e[1]+e[2])/3/255*100]}},function(e,t,r){var n=r(1),a=r(4),o=Object.hasOwnProperty,i={};for(var l in n)o.call(n,l)&&(i[n[l]]=l);var s=e.exports={to:{},get:{}};function u(e,t,r){return Math.min(Math.max(t,e),r)}function c(e){var t=Math.round(e).toString(16).toUpperCase();return t.length<2?"0"+t:t}s.get=function(e){var t,r;switch(e.substring(0,3).toLowerCase()){case"hsl":t=s.get.hsl(e),r="hsl";break;case"hwb":t=s.get.hwb(e),r="hwb";break;default:t=s.get.rgb(e),r="rgb"}return t?{model:r,value:t}:null},s.get.rgb=function(e){if(!e)return null;var t,r,a,i=[0,0,0,1];if(t=e.match(/^#([a-f0-9]{6})([a-f0-9]{2})?$/i)){for(a=t[2],t=t[1],r=0;r<3;r++){var l=2*r;i[r]=parseInt(t.slice(l,l+2),16)}a&&(i[3]=parseInt(a,16)/255)}else if(t=e.match(/^#([a-f0-9]{3,4})$/i)){for(a=(t=t[1])[3],r=0;r<3;r++)i[r]=parseInt(t[r]+t[r],16);a&&(i[3]=parseInt(a+a,16)/255)}else if(t=e.match(/^rgba?\(\s*([+-]?\d+)(?=[\s,])\s*(?:,\s*)?([+-]?\d+)(?=[\s,])\s*(?:,\s*)?([+-]?\d+)\s*(?:[,|\/]\s*([+-]?[\d\.]+)(%?)\s*)?\)$/)){for(r=0;r<3;r++)i[r]=parseInt(t[r+1],0);t[4]&&(t[5]?i[3]=.01*parseFloat(t[4]):i[3]=parseFloat(t[4]))}else{if(!(t=e.match(/^rgba?\(\s*([+-]?[\d\.]+)\%\s*,?\s*([+-]?[\d\.]+)\%\s*,?\s*([+-]?[\d\.]+)\%\s*(?:[,|\/]\s*([+-]?[\d\.]+)(%?)\s*)?\)$/)))return(t=e.match(/^(\w+)$/))?"transparent"===t[1]?[0,0,0,0]:o.call(n,t[1])?((i=n[t[1]])[3]=1,i):null:null;for(r=0;r<3;r++)i[r]=Math.round(2.55*parseFloat(t[r+1]));t[4]&&(t[5]?i[3]=.01*parseFloat(t[4]):i[3]=parseFloat(t[4]))}for(r=0;r<3;r++)i[r]=u(i[r],0,255);return i[3]=u(i[3],0,1),i},s.get.hsl=function(e){if(!e)return null;var t=e.match(/^hsla?\(\s*([+-]?(?:\d{0,3}\.)?\d+)(?:deg)?\s*,?\s*([+-]?[\d\.]+)%\s*,?\s*([+-]?[\d\.]+)%\s*(?:[,|\/]\s*([+-]?(?=\.\d|\d)(?:0|[1-9]\d*)?(?:\.\d*)?(?:[eE][+-]?\d+)?)\s*)?\)$/);if(t){var r=parseFloat(t[4]);return[(parseFloat(t[1])%360+360)%360,u(parseFloat(t[2]),0,100),u(parseFloat(t[3]),0,100),u(isNaN(r)?1:r,0,1)]}return null},s.get.hwb=function(e){if(!e)return null;var t=e.match(/^hwb\(\s*([+-]?\d{0,3}(?:\.\d+)?)(?:deg)?\s*,\s*([+-]?[\d\.]+)%\s*,\s*([+-]?[\d\.]+)%\s*(?:,\s*([+-]?(?=\.\d|\d)(?:0|[1-9]\d*)?(?:\.\d*)?(?:[eE][+-]?\d+)?)\s*)?\)$/);if(t){var r=parseFloat(t[4]);return[(parseFloat(t[1])%360+360)%360,u(parseFloat(t[2]),0,100),u(parseFloat(t[3]),0,100),u(isNaN(r)?1:r,0,1)]}return null},s.to.hex=function(){var e=a(arguments);return"#"+c(e[0])+c(e[1])+c(e[2])+(e[3]<1?c(Math.round(255*e[3])):"")},s.to.rgb=function(){var e=a(arguments);return e.length<4||1===e[3]?"rgb("+Math.round(e[0])+", "+Math.round(e[1])+", "+Math.round(e[2])+")":"rgba("+Math.round(e[0])+", "+Math.round(e[1])+", "+Math.round(e[2])+", "+e[3]+")"},s.to.rgb.percent=function(){var e=a(arguments),t=Math.round(e[0]/255*100),r=Math.round(e[1]/255*100),n=Math.round(e[2]/255*100);return e.length<4||1===e[3]?"rgb("+t+"%, "+r+"%, "+n+"%)":"rgba("+t+"%, "+r+"%, "+n+"%, "+e[3]+")"},s.to.hsl=function(){var e=a(arguments);return e.length<4||1===e[3]?"hsl("+e[0]+", "+e[1]+"%, "+e[2]+"%)":"hsla("+e[0]+", "+e[1]+"%, "+e[2]+"%, "+e[3]+")"},s.to.hwb=function(){var e=a(arguments),t="";return e.length>=4&&1!==e[3]&&(t=", "+e[3]),"hwb("+e[0]+", "+e[1]+"%, "+e[2]+"%"+t+")"},s.to.keyword=function(e){return i[e.slice(0,3)]}},function(e,t,r){"use strict";var n=r(5),a=Array.prototype.concat,o=Array.prototype.slice,i=e.exports=function(e){for(var t=[],r=0,i=e.length;r<i;r++){var l=e[r];n(l)?t=a.call(t,o.call(l)):t.push(l)}return t};i.wrap=function(e){return function(){return e(i(arguments))}}},function(e,t){e.exports=function(e){return!(!e||"string"==typeof e)&&(e instanceof Array||Array.isArray(e)||e.length>=0&&(e.splice instanceof Function||Object.getOwnPropertyDescriptor(e,e.length-1)&&"String"!==e.constructor.name))}},function(e,t,r){var n=r(2),a=r(8),o={};Object.keys(n).forEach((function(e){o[e]={},Object.defineProperty(o[e],"channels",{value:n[e].channels}),Object.defineProperty(o[e],"labels",{value:n[e].labels});var t=a(e);Object.keys(t).forEach((function(r){var n=t[r];o[e][r]=function(e){var t=function(t){if(null==t)return t;arguments.length>1&&(t=Array.prototype.slice.call(arguments));var r=e(t);if("object"==typeof r)for(var n=r.length,a=0;a<n;a++)r[a]=Math.round(r[a]);return r};return"conversion"in e&&(t.conversion=e.conversion),t}(n),o[e][r].raw=function(e){var t=function(t){return null==t?t:(arguments.length>1&&(t=Array.prototype.slice.call(arguments)),e(t))};return"conversion"in e&&(t.conversion=e.conversion),t}(n)}))})),e.exports=o},function(e,t,r){"use strict";e.exports={aliceblue:[240,248,255],antiquewhite:[250,235,215],aqua:[0,255,255],aquamarine:[127,255,212],azure:[240,255,255],beige:[245,245,220],bisque:[255,228,196],black:[0,0,0],blanchedalmond:[255,235,205],blue:[0,0,255],blueviolet:[138,43,226],brown:[165,42,42],burlywood:[222,184,135],cadetblue:[95,158,160],chartreuse:[127,255,0],chocolate:[210,105,30],coral:[255,127,80],cornflowerblue:[100,149,237],cornsilk:[255,248,220],crimson:[220,20,60],cyan:[0,255,255],darkblue:[0,0,139],darkcyan:[0,139,139],darkgoldenrod:[184,134,11],darkgray:[169,169,169],darkgreen:[0,100,0],darkgrey:[169,169,169],darkkhaki:[189,183,107],darkmagenta:[139,0,139],darkolivegreen:[85,107,47],darkorange:[255,140,0],darkorchid:[153,50,204],darkred:[139,0,0],darksalmon:[233,150,122],darkseagreen:[143,188,143],darkslateblue:[72,61,139],darkslategray:[47,79,79],darkslategrey:[47,79,79],darkturquoise:[0,206,209],darkviolet:[148,0,211],deeppink:[255,20,147],deepskyblue:[0,191,255],dimgray:[105,105,105],dimgrey:[105,105,105],dodgerblue:[30,144,255],firebrick:[178,34,34],floralwhite:[255,250,240],forestgreen:[34,139,34],fuchsia:[255,0,255],gainsboro:[220,220,220],ghostwhite:[248,248,255],gold:[255,215,0],goldenrod:[218,165,32],gray:[128,128,128],green:[0,128,0],greenyellow:[173,255,47],grey:[128,128,128],honeydew:[240,255,240],hotpink:[255,105,180],indianred:[205,92,92],indigo:[75,0,130],ivory:[255,255,240],khaki:[240,230,140],lavender:[230,230,250],lavenderblush:[255,240,245],lawngreen:[124,252,0],lemonchiffon:[255,250,205],lightblue:[173,216,230],lightcoral:[240,128,128],lightcyan:[224,255,255],lightgoldenrodyellow:[250,250,210],lightgray:[211,211,211],lightgreen:[144,238,144],lightgrey:[211,211,211],lightpink:[255,182,193],lightsalmon:[255,160,122],lightseagreen:[32,178,170],lightskyblue:[135,206,250],lightslategray:[119,136,153],lightslategrey:[119,136,153],lightsteelblue:[176,196,222],lightyellow:[255,255,224],lime:[0,255,0],limegreen:[50,205,50],linen:[250,240,230],magenta:[255,0,255],maroon:[128,0,0],mediumaquamarine:[102,205,170],mediumblue:[0,0,205],mediumorchid:[186,85,211],mediumpurple:[147,112,219],mediumseagreen:[60,179,113],mediumslateblue:[123,104,238],mediumspringgreen:[0,250,154],mediumturquoise:[72,209,204],mediumvioletred:[199,21,133],midnightblue:[25,25,112],mintcream:[245,255,250],mistyrose:[255,228,225],moccasin:[255,228,181],navajowhite:[255,222,173],navy:[0,0,128],oldlace:[253,245,230],olive:[128,128,0],olivedrab:[107,142,35],orange:[255,165,0],orangered:[255,69,0],orchid:[218,112,214],palegoldenrod:[238,232,170],palegreen:[152,251,152],paleturquoise:[175,238,238],palevioletred:[219,112,147],papayawhip:[255,239,213],peachpuff:[255,218,185],peru:[205,133,63],pink:[255,192,203],plum:[221,160,221],powderblue:[176,224,230],purple:[128,0,128],rebeccapurple:[102,51,153],red:[255,0,0],rosybrown:[188,143,143],royalblue:[65,105,225],saddlebrown:[139,69,19],salmon:[250,128,114],sandybrown:[244,164,96],seagreen:[46,139,87],seashell:[255,245,238],sienna:[160,82,45],silver:[192,192,192],skyblue:[135,206,235],slateblue:[106,90,205],slategray:[112,128,144],slategrey:[112,128,144],snow:[255,250,250],springgreen:[0,255,127],steelblue:[70,130,180],tan:[210,180,140],teal:[0,128,128],thistle:[216,191,216],tomato:[255,99,71],turquoise:[64,224,208],violet:[238,130,238],wheat:[245,222,179],white:[255,255,255],whitesmoke:[245,245,245],yellow:[255,255,0],yellowgreen:[154,205,50]}},function(e,t,r){var n=r(2);function a(e){var t=function(){for(var e={},t=Object.keys(n),r=t.length,a=0;a<r;a++)e[t[a]]={distance:-1,parent:null};return e}(),r=[e];for(t[e].distance=0;r.length;)for(var a=r.pop(),o=Object.keys(n[a]),i=o.length,l=0;l<i;l++){var s=o[l],u=t[s];-1===u.distance&&(u.distance=t[a].distance+1,u.parent=a,r.unshift(s))}return t}function o(e,t){return function(r){return t(e(r))}}function i(e,t){for(var r=[t[e].parent,e],a=n[t[e].parent][e],i=t[e].parent;t[i].parent;)r.unshift(t[i].parent),a=o(n[t[i].parent][i],a),i=t[i].parent;return a.conversion=r,a}e.exports=function(e){for(var t=a(e),r={},n=Object.keys(t),o=n.length,l=0;l<o;l++){var s=n[l];null!==t[s].parent&&(r[s]=i(s,t))}return r}},function(e,t,r){"use strict";r.r(t),r.d(t,"run",(function(){return ye})),r.d(t,"init",(function(){return me})),r.d(t,"convertBg",(function(){return ve})),r.d(t,"extend",(function(){return ke}));var n="(prefers-color-scheme: dark)",a="data_color_scheme_dark",o="".concat(1*new Date).concat(Math.round(10*Math.random())),i="data-darkmode-color-".concat(o),l="data-darkmode-bgcolor-".concat(o),s="data-darkmode-original-color-".concat(o),u="data-darkmode-original-bgcolor-".concat(o),c="data-darkmode-bgimage-".concat(o),h=window.getInnerHeight&&window.getInnerHeight()||window.innerHeight||document.documentElement.clientHeight,f=["TABLE","TR","TD","TH"],d=/ !important$/,g={hasInit:!1,begin:null,showFirstPage:null,error:null,mode:"",whitelist:{tagName:["MPCPS","IFRAME"]},needJudgeFirstPage:!0,delayBgJudge:!1,container:null,cssSelectorsPrefix:"",defaultLightTextColor:"#191919",defaultLightBgColor:"#fff",defaultDarkTextColor:"#a3a3a3",defaultDarkBgColor:"#191919",set:function(e,t,r){var n=t[r];switch(e){case"boolean":"boolean"==typeof n&&(this[r]=n);break;case"string":"string"==typeof n&&""!==n&&(this[r]=n);break;case"function":"function"==typeof n&&(this[r]=n);break;case"dom":n instanceof HTMLElement&&(this[r]=n)}}};function b(e,t,r){return t in e?Object.defineProperty(e,t,{value:r,enumerable:!0,configurable:!0,writable:!0}):e[t]=r,e}function p(e,t){if(!(e instanceof t))throw new TypeError("Cannot call a class as a function")}function y(e,t){for(var r=0;r<t.length;r++){var n=t[r];n.enumerable=n.enumerable||!1,n.configurable=!0,"value"in n&&(n.writable=!0),Object.defineProperty(e,n.key,n)}}function m(e,t,r){return t&&y(e.prototype,t),r&&y(e,r),Object.defineProperty(e,"prototype",{writable:!1}),e}var v=[],k=[],w=function(){function e(){p(this,e)}return m(e,[{key:"loopTimes",get:function(){return se.loopTimes}},{key:"isDarkmode",get:function(){return de.isDarkmode}},{key:"addCss",value:function(e,t){var r=!(arguments.length>2&&void 0!==arguments[2])||arguments[2];(r?v:k).push(he.genCss(e,t.map((function(e){var t=e.key,r=e.value;return he.genCssKV(t,r)})).join("")))}}]),e}(),x=function(){function e(){p(this,e),b(this,"_plugins",[]),b(this,"length",0),b(this,"loopTimes",0),b(this,"firstPageStyle",""),b(this,"otherPageStyle",""),b(this,"firstPageStyleNoMQ",""),b(this,"otherPageStyleNoMQ","")}return m(e,[{key:"extend",value:function(e){this._plugins.push(new(e(w))),this.length++}},{key:"emit",value:function(e){for(var t=arguments.length,r=new Array(t>1?t-1:0),n=1;n<t;n++)r[n-1]=arguments[n];this._plugins.forEach((function(t){"function"==typeof t[e]&&t[e].apply(t,r)}))}},{key:"addCss",value:function(e){e?(this.firstPageStyle+=v.join(""),this.firstPageStyleNoMQ+=k.join("")):(this.otherPageStyle+=v.join(""),this.otherPageStyleNoMQ+=k.join(""))}},{key:"resetCss",value:function(){v=[],k=[]}}]),e}();function M(e){return(M="function"==typeof Symbol&&"symbol"==typeof Symbol.iterator?function(e){return typeof e}:function(e){return e&&"function"==typeof Symbol&&e.constructor===Symbol&&e!==Symbol.prototype?"symbol":typeof e})(e)}function _(e,t){for(var r=0;r<t.length;r++){var n=t[r];n.enumerable=n.enumerable||!1,n.configurable=!0,"value"in n&&(n.writable=!0),Object.defineProperty(e,n.key,n)}}function C(e,t,r){return t in e?Object.defineProperty(e,t,{value:r,enumerable:!0,configurable:!0,writable:!0}):e[t]=r,e}var j=function(){function e(t){!function(e,t){if(!(e instanceof t))throw new TypeError("Cannot call a class as a function")}(this,e),C(this,"_queue",[]),C(this,"_idx",0),this._prefix=t}var t,r,n;return t=e,(r=[{key:"push",value:function(e){var t="".concat(this._prefix).concat(this._idx++);e.classList.add(t),this._queue.push({el:e,className:t,updated:!g.delayBgJudge})}},{key:"forEach",value:function(e){var t=[];for(this._queue.forEach((function(r,n){r.updated&&(t.unshift(n),M(e)&&e(r.el))}));t.length;)this._queue.splice(t.shift(),1)}},{key:"update",value:function(e){this._queue.forEach((function(t){t.updated||Array.prototype.some.call(e,(function(e){return!(1!==e.nodeType||!e.classList.contains(t.className)||(t.el=e,t.updated=!0,0))}))}))}}])&&_(t.prototype,r),n&&_(t,n),Object.defineProperty(t,"prototype",{writable:!1}),e}();function P(e,t){for(var r=0;r<t.length;r++){var n=t[r];n.enumerable=n.enumerable||!1,n.configurable=!0,"value"in n&&(n.writable=!0),Object.defineProperty(e,n.key,n)}}function S(e,t,r){return t in e?Object.defineProperty(e,t,{value:r,enumerable:!0,configurable:!0,writable:!0}):e[t]=r,e}var A=function(){function e(t){!function(e,t){if(!(e instanceof t))throw new TypeError("Cannot call a class as a function")}(this,e),S(this,"_stack",[]),S(this,"_idx",0),this._prefix=t}var t,r,n;return t=e,(r=[{key:"push",value:function(e,t){var r="".concat(this._prefix).concat(this._idx++);e.classList.add(r),this._stack.unshift({el:e,className:r,cssKV:t,updated:!g.delayBgJudge})}},{key:"contains",value:function(e,t){var r=e.getBoundingClientRect(),n=[];for(this._stack.forEach((function(e,t){if(e.updated){e.rect||(e.rect=e.el.getBoundingClientRect());var a=e.rect;r.top>=a.bottom||r.bottom<=a.top||r.left>=a.right||r.right<=a.left||n.unshift(t)}}));n.length;){var a=this._stack.splice(n.shift(),1)[0];"function"==typeof t&&t(a)}}},{key:"update",value:function(e){this._stack.forEach((function(t){t.updated||Array.prototype.some.call(e,(function(e){return!(1!==e.nodeType||!e.classList.contains(t.className)||(t.el=e,t.updated=!0,0))}))}))}}])&&P(t.prototype,r),n&&P(t,n),Object.defineProperty(t,"prototype",{writable:!1}),e}();function O(e,t){return function(e){if(Array.isArray(e))return e}(e)||function(e,t){var r=null==e?null:"undefined"!=typeof Symbol&&e[Symbol.iterator]||e["@@iterator"];if(null==r)return;var n,a,o=[],i=!0,l=!1;try{for(r=r.call(e);!(i=(n=r.next()).done)&&(o.push(n.value),!t||o.length!==t);i=!0);}catch(e){l=!0,a=e}finally{try{i||null==r.return||r.return()}finally{if(l)throw a}}return o}(e,t)||function(e,t){if(!e)return;if("string"==typeof e)return B(e,t);var r=Object.prototype.toString.call(e).slice(8,-1);"Object"===r&&e.constructor&&(r=e.constructor.name);if("Map"===r||"Set"===r)return Array.from(e);if("Arguments"===r||/^(?:Ui|I)nt(?:8|16|32)(?:Clamped)?Array$/.test(r))return B(e,t)}(e,t)||function(){throw new TypeError("Invalid attempt to destructure non-iterable instance.\nIn order to be iterable, non-array objects must have a [Symbol.iterator]() method.")}()}function B(e,t){(null==t||t>e.length)&&(t=e.length);for(var r=0,n=new Array(t);r<t;r++)n[r]=e[r];return n}function E(e,t){for(var r=0;r<t.length;r++){var n=t[r];n.enumerable=n.enumerable||!1,n.configurable=!0,"value"in n&&(n.writable=!0),Object.defineProperty(e,n.key,n)}}function T(e,t,r){return t in e?Object.defineProperty(e,t,{value:r,enumerable:!0,configurable:!0,writable:!0}):e[t]=r,e}var N=function(){function e(){!function(e,t){if(!(e instanceof t))throw new TypeError("Cannot call a class as a function")}(this,e),T(this,"_firstPageStyle",""),T(this,"_otherPageStyle",""),T(this,"isFinish",!1)}var t,r,o;return t=e,(r=[{key:"genCssKV",value:function(e,t){return"".concat(e,": ").concat(t," !important;")}},{key:"genCss",value:function(e,t){return"".concat("dark"===g.mode?"html.".concat(a," "):"").concat(g.cssSelectorsPrefix&&"".concat(g.cssSelectorsPrefix," "),".").concat(e,"{").concat(t,"}")}},{key:"addCss",value:function(e,t){this[t?"_firstPageStyle":"_otherPageStyle"]+=e,se.addCss(t)}},{key:"writeStyle",value:function(e){!e&&de.isDarkmode&&(this.isFinish=!0);var t=(de.isDarkmode?[{target:this,key:["_firstPageStyle","_otherPageStyle"],needMediaQuery:!0}]:[]).concat([{target:se,key:["firstPageStyle","otherPageStyle"],needMediaQuery:!0},{target:se,key:["firstPageStyleNoMQ","otherPageStyleNoMQ"],needMediaQuery:!1}]).map((function(t){var r=t.target,a=O(t.key,2),o=a[0],i=a[1],l=t.needMediaQuery,s="";e?s=o:(r[i]=r[o]+r[i],r[o]="",s=i);var u=r[s];return u?(r[s]="","dark"!==g.mode&&l?"@media ".concat(n," {").concat(u,"}"):u):""})).join("");t&&document.head.insertAdjacentHTML("beforeend",'<style type="text/css">'.concat(t,"</style>"))}}])&&E(t.prototype,r),o&&E(t,o),Object.defineProperty(t,"prototype",{writable:!1}),e}();function F(e,t){for(var r=0;r<t.length;r++){var n=t[r];n.enumerable=n.enumerable||!1,n.configurable=!0,"value"in n&&(n.writable=!0),Object.defineProperty(e,n.key,n)}}function D(e,t,r){return t in e?Object.defineProperty(e,t,{value:r,enumerable:!0,configurable:!0,writable:!0}):e[t]=r,e}function L(e){return function(e){if(Array.isArray(e))return q(e)}(e)||function(e){if("undefined"!=typeof Symbol&&null!=e[Symbol.iterator]||null!=e["@@iterator"])return Array.from(e)}(e)||function(e,t){if(!e)return;if("string"==typeof e)return q(e,t);var r=Object.prototype.toString.call(e).slice(8,-1);"Object"===r&&e.constructor&&(r=e.constructor.name);if("Map"===r||"Set"===r)return Array.from(e);if("Arguments"===r||/^(?:Ui|I)nt(?:8|16|32)(?:Clamped)?Array$/.test(r))return q(e,t)}(e)||function(){throw new TypeError("Invalid attempt to spread non-iterable instance.\nIn order to be iterable, non-array objects must have a [Symbol.iterator]() method.")}()}function q(e,t){(null==t||t>e.length)&&(t=e.length);for(var r=0,n=new Array(t);r<t;r++)n[r]=e[r];return n}function I(e){var t;return(t=[e]).concat.apply(t,L(e.querySelectorAll("*")))}var z={"ue-table-interlace-color-single":"#fcfcfc","ue-table-interlace-color-double":"#f7faff"};var V=function(){function e(){!function(e,t){if(!(e instanceof t))throw new TypeError("Cannot call a class as a function")}(this,e),D(this,"_nodes",[]),D(this,"_firstPageNodes",[]),D(this,"_delayNodes",[]),D(this,"showFirstPage",!1)}var t,r,n;return t=e,(r=[{key:"length",get:function(){return this._nodes.length}},{key:"set",value:function(){var e=arguments.length>0&&void 0!==arguments[0]?arguments[0]:[];this._nodes=e}},{key:"get",value:function(){var e=[];return this._nodes.length?(e=this._nodes,de.isDarkmode&&(this._nodes=[])):this._delayNodes.length?(e=this._delayNodes,this._delayNodes=[]):g.container&&(e=g.container.querySelectorAll("*")),e}},{key:"delay",value:function(){var e=this;Array.prototype.forEach.call(this._nodes,(function(t){return e._delayNodes.push(t)})),this._nodes=[]}},{key:"hasDelay",value:function(){return this._delayNodes.length>0}},{key:"addFirstPageNode",value:function(e){this._firstPageNodes.push(e)}},{key:"showFirstPageNodes",value:function(){this._firstPageNodes.forEach((function(e){return e.style.visibility="visible"})),this.showFirstPage=!0}},{key:"emptyFirstPageNodes",value:function(){this._firstPageNodes=[]}}])&&F(t.prototype,r),n&&F(t,n),Object.defineProperty(t,"prototype",{writable:!1}),e}(),K=r(0),J=r.n(K),$=r(1),H=r.n($);function R(e,t){return function(e){if(Array.isArray(e))return e}(e)||function(e,t){var r=null==e?null:"undefined"!=typeof Symbol&&e[Symbol.iterator]||e["@@iterator"];if(null==r)return;var n,a,o=[],i=!0,l=!1;try{for(r=r.call(e);!(i=(n=r.next()).done)&&(o.push(n.value),!t||o.length!==t);i=!0);}catch(e){l=!0,a=e}finally{try{i||null==r.return||r.return()}finally{if(l)throw a}}return o}(e,t)||U(e,t)||function(){throw new TypeError("Invalid attempt to destructure non-iterable instance.\nIn order to be iterable, non-array objects must have a [Symbol.iterator]() method.")}()}function Q(e){return function(e){if(Array.isArray(e))return G(e)}(e)||function(e){if("undefined"!=typeof Symbol&&null!=e[Symbol.iterator]||null!=e["@@iterator"])return Array.from(e)}(e)||U(e)||function(){throw new TypeError("Invalid attempt to spread non-iterable instance.\nIn order to be iterable, non-array objects must have a [Symbol.iterator]() method.")}()}function U(e,t){if(e){if("string"==typeof e)return G(e,t);var r=Object.prototype.toString.call(e).slice(8,-1);return"Object"===r&&e.constructor&&(r=e.constructor.name),"Map"===r||"Set"===r?Array.from(e):"Arguments"===r||/^(?:Ui|I)nt(?:8|16|32)(?:Clamped)?Array$/.test(r)?G(e,t):void 0}}function G(e,t){(null==t||t>e.length)&&(t=e.length);for(var r=0,n=new Array(t);r<t;r++)n[r]=e[r];return n}function W(e,t){for(var r=0;r<t.length;r++){var n=t[r];n.enumerable=n.enumerable||!1,n.configurable=!0,"value"in n&&(n.writable=!0),Object.defineProperty(e,n.key,n)}}function X(e,t,r){return t in e?Object.defineProperty(e,t,{value:r,enumerable:!0,configurable:!0,writable:!0}):e[t]=r,e}H.a.windowtext=[0,0,0],H.a.transparent=[255,255,255,0];var Y=new RegExp(Object.keys(H.a).map((function(e){return"\\b".concat(e,"\\b")})).join("|"),"ig"),Z=/\brgba?\([^)]+\)/i,ee=/\brgba?\([^)]+\)/gi,te=function(e){return e.replace(d,"")},re=function(e,t){return te(e).replace(Y,(function(e){if(!t&&"transparent"===e)return e;var r=H.a[e.toLowerCase()];return"".concat(r.length>3?"rgba":"rgb","(").concat(r.toString(),")")}))},ne=function(e){if(!e||e.length<1)return"";if(1===e.length)return e[0];for(var t=e.shift(),r=e.shift();r;){var n=J()(r);t=J()(t).mix(n,n.alpha()),r=e.shift()}return t},ae=function(e){var t=re(e);return Z.test(t)?t:""},oe=function(e){return(299*e[0]+587*e[1]+114*e[2])/1e3},ie=function(e,t){var r=e/oe(t),n=Math.min(255,t[0]*r),a=Math.min(255,t[1]*r),o=Math.min(255,t[2]*r);return 0===a||255===n||255===o?a=(1e3*e-299*n-114*o)/587:0===n?n=(1e3*e-587*a-114*o)/299:0!==o&&255!==a||(o=(1e3*e-299*n-587*a)/114),J.a.rgb(n,a,o)},le=function(){function e(){!function(e,t){if(!(e instanceof t))throw new TypeError("Cannot call a class as a function")}(this,e),X(this,"_idx",0),X(this,"_defaultDarkTextColorRgb",J()(g.defaultDarkTextColor).rgb().array()),X(this,"_defaultDarkBgColorRgb",J()(g.defaultDarkBgColor).rgb().array()),X(this,"_defaultDarkBgColorHSL",J()(g.defaultDarkBgColor).hsl().array()),X(this,"_defaultDarkTextColorBrightness",oe(this._defaultDarkTextColorRgb)),X(this,"_defaultDarkBgColorBrightness",oe(this._defaultDarkBgColorRgb)),X(this,"_defaultDarkBgColorHslBrightness",this._defaultDarkBgColorHSL[2]),X(this,"_maxLimitOffsetBrightness",this._defaultDarkTextColorBrightness-this._defaultDarkBgColorBrightness),X(this,"isDarkmode",!1)}var t,r,n;return t=e,(r=[{key:"_adjustTextBrightness",value:function(e,t){var r=t.rgb().array(),n=t.alpha(),a=oe(r)*n+this._defaultDarkBgColorBrightness*(1-n),o=e.rgb().array(),i=e.hsl().array(),l=e.alpha(),s=oe(o),u=Math.abs(a-s);if(s>=250)return e;if(u>this._maxLimitOffsetBrightness&&a<=this._defaultDarkBgColorBrightness+2)return ie(this._maxLimitOffsetBrightness+a,o).alpha(l);if(u>=65)return e;if(a>=100){if(i[2]>50){i[2]=90-i[2];var c=J.a.hsl.apply(J.a,Q(i)).alpha(l);return this._adjustTextBrightness(c,t)}return ie(Math.min(this._maxLimitOffsetBrightness,a-65),o).alpha(l)}if(i[2]<=40){i[2]=90-i[2];var h=J.a.hsl.apply(J.a,Q(i)).alpha(l);return this._adjustTextBrightness(h,t)}return ie(Math.min(this._maxLimitOffsetBrightness,a+65),o).alpha(l)}},{key:"_adjustBackgroundBrightness",value:function(e){var t=e.rgb().array(),r=e.hsl().array(),n=e.alpha(),a=oe(t),o=e;return 0===r[1]&&r[2]>40||a>250?o=J.a.hsl(0,0,Math.min(100,100+this._defaultDarkBgColorHslBrightness-r[2])):a>190?o=ie(190,t).alpha(n):r[2]<22&&(r[2]=22,o=J.a.hsl.apply(J.a,Q(r))),o.alpha(n).rgb()}},{key:"_adjustBrightness",value:function(e,t,r){var n,a=e.alpha(),o="";if(r.isBgColor){if(t.getAttribute(c)&&a>=.05&&t.removeAttribute(c),n=this._adjustBackgroundBrightness(e),!r.hasInlineColor){var s=t.getAttribute(i)||g.defaultLightTextColor,u=n||e,h=this._adjustBrightness(J()(s),t,{isTextColor:!0,parentElementBgColorStr:u});h.newColor?o+=he.genCssKV("color",h.newColor):o+=he.genCssKV("color",s)}}else if(r.isTextColor||r.isBorderColor){var f=r.parentElementBgColorStr||r.isTextColor&&t.getAttribute(l)||g.defaultDarkBgColor,d=J()(f);t.getAttribute(c)||(n=this._adjustTextBrightness(e,d),se.emit("afterConvertTextColor",t,{fontColor:n,bgColor:d}))}else r.isTextShadow&&(n=this._adjustBackgroundBrightness(e));return{newColor:n&&e.toString()!==n.toString()&&n.alpha(a).rgb(),extStyle:o}}},{key:"_try",value:function(e){try{return e()}catch(e){console.log("An error occurred when running the dark mode conversion algorithm\n",e),"function"==typeof g.error&&g.error(e)}}},{key:"convert",value:function(e){var t=this;se.resetCss(),se.emit("beforeConvertNode",e);var r,n,a="";if(this.isDarkmode){var o=e.nodeName;if(g.whitelist.tagName.indexOf(o)>-1)return"";var h,b,p=e.style,y="",m=!1,v=!1,k=!1,w=(p.cssText&&p.cssText.split(";")||[]).map((function(e){var t=e.indexOf(":");return[e.slice(0,t).toLowerCase(),e.slice(t+1)].map((function(e){return(e||"").replace(/^[\s\uFEFF\xA0]+|[\s\uFEFF\xA0]+$/g,"")}))})).filter((function(e){var t=R(e,2),r=t[0],n=t[1];return"color"===r?m=!0:/background/i.test(r)&&(v=!0,"background-position"===r?h=n:"background-size"===r&&(b=n)),(/background/i.test(r)||/^(-webkit-)?border-image/.test(r))&&/url\([^)]*\)/i.test(n)&&(k=!0),["-webkit-border-image","border-image","color","background-color","background-image","background","border","border-top","border-right","border-bottom","border-left","border-color","border-top-color","border-right-color","border-bottom-color","border-left-color","-webkit-text-fill-color","-webkit-text-stroke","-webkit-text-stroke-color","text-shadow"].indexOf(r)>-1})).sort((function(e,t){var r=R(e,1)[0],n=R(t,1)[0];return"color"===r||"background-image"===r&&"background-color"===n||0===n.indexOf("-webkit-text")?1:-1}));f.indexOf(o)>-1&&!v&&this._try((function(){var t=function(e){var t=null;return Array.prototype.some.call(e.classList,(function(e){return!!z[e]&&(t=z[e],!0)})),t}(e);t||(t=e.getAttribute("bgcolor")),t&&(w.unshift(["background-color",J()(t).toString()]),v=!0)})),"FONT"!==o||m||this._try((function(){var t=e.getAttribute("color");t&&(w.push(["color",J()(t).toString()]),m=!0)}));var x="",M="",_=0;if(w.some((function(e,r){var n=R(e,2),a=n[0],o=n[1];return t._try((function(){if(0!==a.indexOf("-webkit-text"))return _=r,!0;switch(a){case"-webkit-text-fill-color":x=ae(o);break;case"-webkit-text-stroke":var e=o.split(" ");2===e.length&&(M=ae(e[1]));break;case"-webkit-text-stroke-color":M=ae(o)}return!1}))})),x&&(m?w[w.length-1]=["-webkit-text-fill-color",x]:(w.push(["-webkit-text-fill-color",x]),m=!0)),_&&(w.splice(0,_),M&&w.unshift(["-webkit-text-stroke-color",M])),w.forEach((function(r){var n=R(r,2),a=n[0],o=n[1];return t._try((function(){var r,n=o,f=!1,w=/^background/.test(a),x="text-shadow"===a,M=["-webkit-text-stroke-color","color","-webkit-text-fill-color"].indexOf(a),_=/^border/.test(a),C=/gradient/.test(o),j=[],P="";if(o=re(o,C),Z.test(o)){if(C){for(var S=ee.exec(o);S;)j.push(S[0]),S=ee.exec(o);r=ne(j)}var A=0;o=o.replace(ee,(function(n){C&&(n=r,f=!0);var a=t._adjustBrightness(J()(n),e,{isBgColor:w,isTextShadow:x,isTextColor:M>-1,isBorderColor:_,hasInlineColor:m}),o=!k&&a.newColor;if(P+=a.extStyle,w||M>0){var h=w?l:i,d=w?u:s,b=o?o.toString():n;0===A&&I(e).forEach((function(e){var t=e.getAttribute(d)||g.defaultLightBgColor;e.setAttribute(h,b),e.setAttribute(d,t.split("|").concat(n).join("|")),w&&J()(b).alpha()>=.05&&e.getAttribute(c)&&e.removeAttribute(c)}))}return o&&(f=!0),A+=1,o||n})).replace(/\s?!\s?important/gi,"")}if(P&&(y+=P),!(e instanceof SVGElement)){var O=/^background/.test(a),B=/^(-webkit-)?border-image/.test(a);if((O||B)&&/url\([^)]*\)/i.test(o)){f=!0;var E=ne((e.getAttribute(u)||g.defaultLightBgColor).split("|"));if(o=o.replace(/^(.*?)url\(([^)]*)\)(.*)$/i,(function(t){var r=t,n="",o="",i="";return"1"!==e.getAttribute(c)&&I(e).forEach((function(e){return e.setAttribute(c,"1")})),O?(r="linear-gradient(".concat("rgba(0,0,0,0.2)",", ").concat("rgba(0,0,0,0.2)","),").concat(t),i=he.genCssKV(a,"".concat(r,",linear-gradient(").concat(E,", ").concat(E,")")),h&&(n="top left,".concat(h),y+=he.genCssKV("background-position","".concat(n)),i+=he.genCssKV("background-position","".concat(n,",top left"))),b&&(o="100%,".concat(b),y+=he.genCssKV("background-size","".concat(o)),i+=he.genCssKV("background-size","".concat(o,",100%"))),ce.push(e,i)):!v&&ce.push(e,he.genCssKV("background-image","linear-gradient(".concat("rgba(0,0,0,0.2)",", ").concat("rgba(0,0,0,0.2)","),linear-gradient(").concat(E,", ").concat(E,")"))),r})),!m){var T=ne((e.getAttribute(s)||g.defaultLightTextColor).split("|"));y+=he.genCssKV("color",T),I(e).forEach((function(e){return e.setAttribute(i,T)}))}}}f&&(d.test(n)&&(p[a]=te(n)),C?ce.push(e,he.genCssKV(a,o)):y+=he.genCssKV(a,o))}))})),y){e.setAttribute("data-style",p.cssText);var C="".concat("js_darkmode__").concat(this._idx++);e.classList.add(C),a+=y?he.genCss(C,y):""}r=e,n="",Array.prototype.forEach.call(r.childNodes,(function(e){3===e.nodeType&&(n+=e.nodeValue.replace(/\s/g,""))})),n.length>0&&(g.delayBgJudge?ue.push(e):ce.contains(e,(function(e){a+=he.genCss(e.className,e.cssKV)})))}return se.emit("afterConvertNode",e),a}}])&&W(t.prototype,r),n&&W(t,n),Object.defineProperty(t,"prototype",{writable:!1}),e}(),se=new x,ue=new j("".concat("js_darkmode__","text__")),ce=new A("".concat("js_darkmode__","bg__")),he=new N,fe=new V,de=new le,ge=new RegExp("".concat("js_darkmode__","[^ ]+"),"g"),be=null,pe=function(e){var t=arguments.length>1&&void 0!==arguments[1]?arguments[1]:{type:"dom"};if(t.force&&(he.isFinish=!1),!he.isFinish)try{de.isDarkmode=g.mode?"dark"===g.mode:e.matches,"dom"===t.type?(de.isDarkmode&&"function"==typeof g.begin&&g.begin(fe.hasDelay()),Array.prototype.forEach.call(fe.get(),(function(e){if(de.isDarkmode&&e.className&&"string"==typeof e.className&&(e.className=e.className.replace(ge,"")),de.isDarkmode||se.length)if(g.needJudgeFirstPage){var t=e.getBoundingClientRect(),r=t.top,n=t.bottom;r<=0&&n<=0?he.addCss(de.convert(e),!1):r>0&&r<h||n>0&&n<h?(fe.addFirstPageNode(e),he.addCss(de.convert(e),!0)):(g.needJudgeFirstPage=!1,he.writeStyle(!0),fe.showFirstPageNodes(),"function"==typeof g.showFirstPage&&g.showFirstPage(),he.addCss(de.convert(e),!1))}else he.addCss(de.convert(e),!1)})),se.loopTimes++):"bg"===t.type&&de.isDarkmode&&ue.forEach((function(e){return ce.contains(e,(function(e){he.addCss(he.genCss(e.className,e.cssKV),!1)}))})),(g.needJudgeFirstPage||!g.needJudgeFirstPage&&!fe.showFirstPage)&&"function"==typeof g.showFirstPage&&g.showFirstPage(),he.writeStyle(),fe.emptyFirstPageNodes(),de.isDarkmode||(g.needJudgeFirstPage=!1,g.delayBgJudge=!1,null===g.container&&"dom"===t.type&&fe.length&&fe.delay())}catch(e){console.log("An error occurred when running the dark mode conversion algorithm\n",e),"function"==typeof g.error&&g.error(e)}};function ye(e,t){me(t),fe.set(e),pe(be,{force:!0,type:"dom"})}function me(){var e=arguments.length>0&&void 0!==arguments[0]?arguments[0]:{};if(!g.hasInit){g.hasInit=!0;var t=g.whitelist.tagName;e.whitelist&&e.whitelist.tagName instanceof Array&&e.whitelist.tagName.forEach((function(e){e=e.toUpperCase(),-1===t.indexOf(e)&&t.push(e)})),["dark","light"].indexOf(e.mode)>-1&&(g.set("string",e,"mode"),document.getElementsByTagName("html")[0].classList.add(a)),g.set("function",e,"begin"),g.set("function",e,"showFirstPage"),g.set("function",e,"error"),g.set("boolean",e,"needJudgeFirstPage"),g.set("boolean",e,"delayBgJudge"),g.set("dom",e,"container"),g.set("string",e,"cssSelectorsPrefix"),g.set("string",e,"defaultLightTextColor"),g.set("string",e,"defaultLightBgColor"),g.set("string",e,"defaultDarkTextColor"),g.set("string",e,"defaultDarkBgColor"),!g.mode&&null===be&&window.matchMedia&&(be=window.matchMedia(n)).addListener(pe)}}function ve(e){fe.set(e),null!==g.container&&(ce.update(e),ue.update(e)),pe(be,{force:!0,type:"bg"})}function ke(e){e.forEach((function(e){return se.extend(e)}))}}])}));</script><script type="text/javascript" nonce="1412121176" reportloaderror>!function(){"use strict";function t(t,e){if(!(t instanceof e))throw new TypeError("Cannot call a class as a function")}function e(t,e){for(var n=0;n<e.length;n++){var r=e[n];r.enumerable=r.enumerable||!1,r.configurable=!0,"value"in r&&(r.writable=!0),Object.defineProperty(t,r.key,r)}}function n(t,e){return n=Object.setPrototypeOf||function(t,e){return t.__proto__=e,t},n(t,e)}function r(t){return r="function"==typeof Symbol&&"symbol"==typeof Symbol.iterator?function(t){return typeof t}:function(t){return t&&"function"==typeof Symbol&&t.constructor===Symbol&&t!==Symbol.prototype?"symbol":typeof t},r(t)}function o(t,e){if(e&&("object"===r(e)||"function"==typeof e))return e;if(void 0!==e)throw new TypeError("Derived constructors may only return object or undefined");return function(t){if(void 0===t)throw new ReferenceError("this hasn't been initialised - super() hasn't been called");return t}(t)}function i(t){return i=Object.setPrototypeOf?Object.getPrototypeOf:function(t){return t.__proto__||Object.getPrototypeOf(t)},i(t)}function u(t){var e=function(){if("undefined"==typeof Reflect||!Reflect.construct)return!1;if(Reflect.construct.sham)return!1;if("function"==typeof Proxy)return!0;try{return Boolean.prototype.valueOf.call(Reflect.construct(Boolean,[],(function(){}))),!0}catch(t){return!1}}();return function(){var n,r=i(t);if(e){var u=i(this).constructor;n=Reflect.construct(r,arguments,u)}else n=r.apply(this,arguments);return o(this,n)}}var c=function(r){var o=!1,i=document.querySelectorAll("#js_content")[0];return function(r){!function(t,e){if("function"!=typeof e&&null!==e)throw new TypeError("Super expression must either be null or a function");t.prototype=Object.create(e&&e.prototype,{constructor:{value:t,writable:!0,configurable:!0}}),Object.defineProperty(t,"prototype",{writable:!1}),e&&n(t,e)}(p,r);var c,f,a,l=u(p);function p(){return t(this,p),l.apply(this,arguments)}return c=p,(f=[{key:"afterConvertNode",value:function(t){if(!this.loopTimes){if(!o){var e=navigator.userAgent;/(iPhone|iPad|iPod|iOS|mac\sos)/i.test(e)&&i.classList.add("fix_apple_default_style"),o=!0}if("animate"===t.tagName&&"height"===t.getAttribute("attributeName")){var n=t.getAttribute("repeatCount");("indefinite"===n||n>"10")&&"click"!==t.getAttribute("begin")&&"click"!==t.getAttribute("end")&&(t.setAttribute("repeatCount","undefined"),t.setAttribute("attributeName","undefined"),(new Image).src="https://mp.weixin.qq.com/mp/jsmonitor?idkey=306525_1_1")}}}}])&&e(c.prototype,f),a&&e(c,a),Object.defineProperty(c,"prototype",{writable:!1}),p}(r)};window.__second_open__||(window.DomFilter=c)}();</script>
+<script type="text/javascript" nonce="1412121176" reportloaderror>
+(function () {
+  if (!window.__second_open__ && window.Darkmode) { // 非秒开，秒开的逻辑写在skeleton.js里
+    var cost = 0; // 记录Darkmode首屏渲染耗时
+    window.Darkmode.extend([window.DomFilter]); // 插件注册
+    window.Darkmode.run(document.querySelectorAll('#js_content *'), {
+      mode: '', // ''|'dark'|'light', 空表示跟随系统
+      defaultDarkBgColor: '',
+      error: function () {
+        (new Image()).src = 'https://mp.weixin.qq.com/mp/jsmonitor?idkey=125617_0_1'; // 上报conver出错 H5
+      },
+      begin: function (isSwitch) {
+        (new Image()).src = 'https://mp.weixin.qq.com/mp/jsmonitor?idkey=125617_2_1'; // 上报Darkmode H5 PV
+        isSwitch && ((new Image()).src = 'https://mp.weixin.qq.com/mp/jsmonitor?idkey=125617_4_1'); // 上报Darkmode H5 PV（仅含从LM切换到DM的情况）
+
+        cost = new Date() * 1; // 记录开始渲染的时间
+      },
+      showFirstPage: function () {
+        cost = new Date() * 1 - cost; // 记录首屏渲染耗时
+        var isTop = (document.documentElement.scrollTop || window.pageYOffset || document.body.scrollTop) === 0;
+        // 上报Darkmode耗时大盘数据
+        if (cost <= 10) {
+          (new Image()).src = 'https://mp.weixin.qq.com/mp/jsmonitor?idkey=125617_6_1'; // 上报Darkmode H5 首屏渲染时间在10ms以内（含10ms）PV
+          isTop && ((new Image()).src = 'https://mp.weixin.qq.com/mp/jsmonitor?idkey=125617_13_1'); // 上报Darkmode H5 首屏渲染时间在10ms以内（含10ms）PV - 无滚动
+        } else if (cost > 10 && cost <= 20) {
+          (new Image()).src = 'https://mp.weixin.qq.com/mp/jsmonitor?idkey=125617_7_1'; // 上报Darkmode H5 首屏渲染时间在(10ms, 20ms]之间PV
+          isTop && ((new Image()).src = 'https://mp.weixin.qq.com/mp/jsmonitor?idkey=125617_14_1'); // 上报Darkmode H5 首屏渲染时间在(10ms, 20ms]之间PV - 无滚动
+        } else if (cost > 20 && cost <= 30) {
+          (new Image()).src = 'https://mp.weixin.qq.com/mp/jsmonitor?idkey=125617_8_1'; // 上报Darkmode H5 首屏渲染时间在(20ms, 30ms]之间PV
+          isTop && ((new Image()).src = 'https://mp.weixin.qq.com/mp/jsmonitor?idkey=125617_15_1'); // 上报Darkmode H5 首屏渲染时间在(20ms, 30ms]之间PV - 无滚动
+        } else if (cost > 30 && cost <= 40) {
+          (new Image()).src = 'https://mp.weixin.qq.com/mp/jsmonitor?idkey=125617_9_1'; // 上报Darkmode H5 首屏渲染时间在(30ms, 40ms]之间PV
+          isTop && ((new Image()).src = 'https://mp.weixin.qq.com/mp/jsmonitor?idkey=125617_16_1'); // 上报Darkmode H5 首屏渲染时间在(30ms, 40ms]之间PV - 无滚动
+        } else if (cost > 40 && cost <= 50) {
+          (new Image()).src = 'https://mp.weixin.qq.com/mp/jsmonitor?idkey=125617_10_1'; // 上报Darkmode H5 首屏渲染时间在(40ms, 50ms]之间PV
+          isTop && ((new Image()).src = 'https://mp.weixin.qq.com/mp/jsmonitor?idkey=125617_17_1'); // 上报Darkmode H5 首屏渲染时间在(40ms, 50ms]之间PV - 无滚动
+        } else if (cost > 50 && cost <= 60) {
+          (new Image()).src = 'https://mp.weixin.qq.com/mp/jsmonitor?idkey=125617_11_1'; // 上报Darkmode H5 首屏渲染时间在(50ms, 60ms]之间PV
+          isTop && ((new Image()).src = 'https://mp.weixin.qq.com/mp/jsmonitor?idkey=125617_18_1'); // 上报Darkmode H5 首屏渲染时间在(50ms, 60ms]之间PV - 无滚动
+        } else {
+          (new Image()).src = 'https://mp.weixin.qq.com/mp/jsmonitor?idkey=125617_12_1'; // 上报Darkmode H5 首屏渲染时间在60ms以上（不含60ms）PV
+          isTop && ((new Image()).src = 'https://mp.weixin.qq.com/mp/jsmonitor?idkey=125617_19_1'); // 上报Darkmode H5 首屏渲染时间在60ms以上（不含60ms）PV - 无滚动
+        }
+      }
+    });
+    document.getElementById('js_content').style.visibility = 'visible';
+  }
+})();
+</script>
+
+<script type="text/javascript" nonce="1412121176" reportloaderror>
+(function(_g){
+    _g.appmsg_like_type = "2" * 1 ? "2" * 1 : 1;
+    // _g.appmsg_like_type = 2;
+    _g.clientversion = "";
+    _g.passparam = ""; // 看一看带参数
+    if(!_g.msg_link) {
+      _g.msg_link = "";
+    }
+    _g.appmsg_type = "9"; // 后台图文消息类型
+    _g.devicetype = ""; // devicetype
+})(window);
+// 已翻译
+</script>
+
+<script type="text/javascript" nonce="1412121176" reportloaderror>
+// 企业微信里置灰公众号名称
+(function() {
+  var ua = window.navigator.userAgent;
+  if (/MicroMessenger\/([\d\.]+)/i.test(ua) && /wxwork/i.test(ua)) {
+    var profileName = document.getElementById('js_name');
+    var authorName = document.getElementById('js_author_name');
+    var accountNames = document.getElementsByClassName('account_nickname_inner');
+    if (profileName) {
+      profileName.classList.add('tips_global_primary');
+    }
+    if (authorName) {
+      authorName.classList.add('tips_global_primary');
+    }
+    if (accountNames && accountNames.length) {
+      accountNames[0].classList.add('tips_global_primary');
+    }
+  }
+})();
+</script>
+<script type="text/javascript" nonce="1412121176" reportloaderror>
+// 安卓插入米大师 h5 sdk
+(function() {
+  var ua = navigator.userAgent;
+  if (ua.indexOf("MicroMessenger") != -1 && ua.indexOf("Android") != -1){
+    var script = document.createElement('script');
+    var head = document.getElementsByTagName('head')[0];
+    script.type = 'text/javascript';
+    script.src = "https://midas.gtimg.cn/h5sdk/js/api/h5sdk.js";
+    head.appendChild(script);
+  }
+})();
+</script>
+<script type="text/javascript" nonce="1412121176" reportloaderror>
+var real_show_page_time = +new Date();
+if (!!window.addEventListener){
+  window.addEventListener("load", function(){
+    window.onload_endtime = +new Date();
+  });
+}
+</script>
+
+<script nomodule nonce="1412121176" reportloaderror>new Image().src='https://mp.weixin.qq.com/mp/jsmonitor?idkey=66881_111_1&t='+Math.random();</script>
+
+    
+
+<script nomodule nonce="1412121176" reportloaderror>!function(){var e=document,t=e.createElement("script");if(!("noModule"in t)&&"onbeforeload"in t){var n=!1;e.addEventListener("beforeload",(function(e){if(e.target===t)n=!0;else if(!e.target.hasAttribute("nomodule")||!n)return;e.preventDefault()}),!0),t.type="module",t.src=".",e.head.appendChild(t),t.remove()}}();</script>
+<script nomodule id="vite-legacy-polyfill" src="//res.wx.qq.com/mmbizwap/zh_CN/htmledition/js/../mmbizappmsg/assets/polyfills-legacy.62c1fc28.js" nonce="1412121176" reportloaderror></script>
+<script nomodule id="vite-legacy-entry" src="https://images.weserv.nl/?url=//res.wx.qq.com/mmbizwap/zh_CN/htmledition/js/../mmbizappmsg/assets/appmsg-legacy.b6975240.js" nonce="1412121176" reportloaderror>System.import(document.getElementById('vite-legacy-entry').getAttribute('data-src'))</script>
+
+    <link rel="stylesheet" type="text/css" href="//res.wx.qq.com/mmbizwap/zh_CN/htmledition/style/page/appmsg_new/mod/weui_a11y5cbc33.css" reportloaderror>
+<script type="text/javascript" src="//res.wx.qq.com/mmbizwap/zh_CN/htmledition/js/lib/wa-helper.min5cbc33.js" nonce="1412121176" reportloaderror></script>
+<script type="text/javascript" nonce="1412121176" reportloaderror>
+  // WAH.default.init()
+</script>
+
+
+
+<span aria-hidden="true" class="weui-a11y_ref" style="display:none" id="js_a11y_colon">：</span>
+<span aria-hidden="true" class="weui-a11y_ref" style="display:none" id="js_a11y_comma">，</span>
+<span aria-hidden="true" class="weui-a11y_ref" style="display:none" id="js_a11y_period">。</span>
+<span aria-hidden="true" class="weui-a11y_ref" style="display:none" id="js_a11y_space">&nbsp;</span>
+
+
+<span aria-hidden="true" class="weui-a11y_ref" style="display:none" id="js_a11y_type_video">视频</span>
+<span aria-hidden="true" class="weui-a11y_ref" style="display:none" id="js_a11y_type_weapp">小程序</span>
+
+
+<span aria-hidden="true" class="weui-a11y_ref" style="display:none" id="js_a11y_zan_btn_txt">赞</span>
+<span aria-hidden="true" class="weui-a11y_ref" style="display:none" id="js_a11y_zan_btn_tips">，轻点两下取消赞</span>
+<span aria-hidden="true" class="weui-a11y_ref" style="display:none" id="js_a11y_like_btn_txt">在看</span>
+<span aria-hidden="true" class="weui-a11y_ref" style="display:none" id="js_a11y_like_btn_tips">，轻点两下取消在看</span>
+
+  </body>
+</html>
+
+
